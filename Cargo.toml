@@ -1,0 +1,6 @@
+[package]
+name = "python-parser"
+version = "0.1.0"
+authors = ["Valentin Lorentz <progval+git@progval.net>"]
+
+[dependencies]
