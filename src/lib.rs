@@ -55,9 +55,9 @@ named!(pub parse_single_input<&str, SingleInput>,
 
 named!(simple_stmt<&str, Vec<SmallStatement>>,
   do_parse!(
-    first_stmts: many0!(terminated!(small_stmt, char!(';'))) >>
+    first_stmts: many0!(terminated!(small_stmt, semicolon)) >>
     last_stmt: small_stmt >>
-    opt!(char!(';')) >>
+    opt!(semicolon) >>
     newline >> ({
       let mut stmts = first_stmts;
       stmts.push(last_stmt);
@@ -84,7 +84,11 @@ named!(atom<&str, Atom>,
 );
 
 named!(newline<&str, ()>,
-  map!(char!('\n'), |_| ())
+  map!(preceded!(space, char!('\n')), |_| ())
+);
+
+named!(semicolon<&str, ()>,
+  map!(ws2!(char!(';')), |_| ())
 );
 
 #[cfg(test)]
@@ -97,5 +101,8 @@ mod tests {
         assert_eq!(atom("foo "), Ok((" ", "foo")));
         assert_eq!(del_stmt("del foo\n"), Ok(("\n", vec!["foo"])));
         assert_eq!(parse_single_input("del foo\n"), Ok(("", SingleInput::SimpleStatement(vec![SmallStatement::Del(vec!["foo"])]))));
+        assert_eq!(parse_single_input("del foo bar\n"), Ok(("", SingleInput::SimpleStatement(vec![SmallStatement::Del(vec!["foo", "bar"])]))));
+        assert_eq!(parse_single_input("del foo; del bar\n"), Ok(("", SingleInput::SimpleStatement(vec![SmallStatement::Del(vec!["foo"]), SmallStatement::Del(vec!["bar"])]))));
+        assert_eq!(parse_single_input("del foo ;del bar\n"), Ok(("", SingleInput::SimpleStatement(vec![SmallStatement::Del(vec!["foo"]), SmallStatement::Del(vec!["bar"])]))));
     }
 }
