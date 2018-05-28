@@ -264,4 +264,78 @@ mod tests {
             )
         )));
     }
+
+    #[test]
+    fn test_dangling_else_1() {
+        assert_eq!(compound_stmt(CS("if foo:\n if foo:\n  del bar\nelse:\n del qux"), 0, 0), Ok((CS(""),
+            CompoundStatement::If(
+                vec![
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Compound(Box::new(
+                              CompoundStatement::If(
+                                  vec![
+                                      (
+                                          "foo".to_string(),
+                                          vec![
+                                              Statement::Simple(vec![
+                                                  SmallStatement::Del(vec!["bar".to_string()])
+                                              ])
+                                          ]
+                                      ),
+                                  ],
+                                  None
+                                )
+                            ))
+                        ]
+                    ),
+                ],
+                Some(
+                    vec![
+                        Statement::Simple(vec![
+                            SmallStatement::Del(vec!["qux".to_string()])
+                        ])
+                    ]
+                )
+            )
+        )));
+    }
+
+    #[test]
+    fn test_dangling_else_2() {
+        assert_eq!(compound_stmt(CS("if foo:\n if foo:\n  del bar\n else:\n  del qux"), 0, 0), Ok((CS(""),
+            CompoundStatement::If(
+                vec![
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Compound(Box::new(
+                              CompoundStatement::If(
+                                  vec![
+                                      (
+                                          "foo".to_string(),
+                                          vec![
+                                              Statement::Simple(vec![
+                                                  SmallStatement::Del(vec!["bar".to_string()])
+                                              ])
+                                          ]
+                                      ),
+                                  ],
+                                  Some(
+                                      vec![
+                                          Statement::Simple(vec![
+                                              SmallStatement::Del(vec!["qux".to_string()])
+                                          ])
+                                      ]
+                                  )
+                                )
+                            ))
+                        ]
+                    ),
+                ],
+                None
+            )
+        )));
+    }
 }
