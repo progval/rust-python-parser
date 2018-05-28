@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate nom;
+use nom::types::CompleteStr;
 
 #[cfg(test)]
 #[macro_use]
@@ -24,7 +25,7 @@ pub enum Atom {
     Bytes(Vec<u8>),
 }
 
-named!(pub parse_single_input <&str, Option<Statement>>,
+named!(pub parse_single_input <CompleteStr, Option<Statement>>,
   alt!(
     newline => { |_| None }
   | call!(statement, 0, 0) => { |stmt| Some(stmt) }
@@ -32,7 +33,7 @@ named!(pub parse_single_input <&str, Option<Statement>>,
 );
 
 use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
-named!(atom<&str, Atom>,
+named!(atom<CompleteStr, Atom>,
   alt!(
     name => { |n| Atom::Name(n) }
   | delimited!(
@@ -47,21 +48,22 @@ named!(atom<&str, Atom>,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nom::types::CompleteStr as CS;
 
     #[test]
     fn foo() {
-        assert_eq!(newline("\n"), Ok(("", ())));
-        assert_eq!(parse_single_input("del foo\n"), Ok(("", Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()])])))));
-        assert_eq!(parse_single_input("del foo bar\n"), Ok(("", Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string(), "bar".to_string()])])))));
-        assert_eq!(parse_single_input("del foo; del bar\n"), Ok(("", Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()]), SmallStatement::Del(vec!["bar".to_string()])])))));
-        assert_eq!(parse_single_input("del foo ;del bar\n"), Ok(("", Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()]), SmallStatement::Del(vec!["bar".to_string()])])))));
+        assert_eq!(newline(CS("\n")), Ok((CS(""), ())));
+        assert_eq!(parse_single_input(CS("del foo")), Ok((CS(""), Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()])])))));
+        assert_eq!(parse_single_input(CS("del foo bar")), Ok((CS(""), Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string(), "bar".to_string()])])))));
+        assert_eq!(parse_single_input(CS("del foo; del bar")), Ok((CS(""), Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()]), SmallStatement::Del(vec!["bar".to_string()])])))));
+        assert_eq!(parse_single_input(CS("del foo ;del bar")), Ok((CS(""), Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()]), SmallStatement::Del(vec!["bar".to_string()])])))));
     }
 
     #[test]
     fn test_atom() {
-        assert_eq!(atom("foo "), Ok((" ", Atom::Name("foo".to_string()))));
-        assert_eq!(atom(r#""foo" "#), Ok((" ", Atom::String("foo".to_string()))));
-        assert_eq!(atom(r#""fo\"o" "#), Ok((" ", Atom::String("fo\"o".to_string()))));
-        assert_eq!(atom(r#""fo"o" "#), Ok((r#"o" "#, Atom::String("fo".to_string()))));
+        assert_eq!(atom(CS("foo ")), Ok((CS(" "), Atom::Name("foo".to_string()))));
+        assert_eq!(atom(CS(r#""foo" "#)), Ok((CS(" "), Atom::String("foo".to_string()))));
+        assert_eq!(atom(CS(r#""fo\"o" "#)), Ok((CS(" "), Atom::String("fo\"o".to_string()))));
+        assert_eq!(atom(CS(r#""fo"o" "#)), Ok((CS(r#"o" "#), Atom::String("fo".to_string()))));
     }
 }

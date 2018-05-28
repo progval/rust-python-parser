@@ -1,4 +1,6 @@
-named!(pub space<&str, &str>, eat_separator!(&b" \t"[..]));
+use nom::types::CompleteStr;
+
+named!(pub space<CompleteStr, CompleteStr>, eat_separator!(&b" \t"[..]));
 
 #[macro_export]
 macro_rules! ws2 (
@@ -26,15 +28,15 @@ pub type Name = String;
 pub type Test = String;
 
 use nom::alpha;
-named!(pub name<&str, String>,
+named!(pub name<CompleteStr, String>,
   map!(alpha, |s| s.to_string())
   // TODO
 );
 
-named!(pub newline<&str, ()>,
+named!(pub newline<CompleteStr, ()>,
   map!(preceded!(space, char!('\n')), |_| ())
 );
 
-named!(pub semicolon<&str, ()>,
+named!(pub semicolon<CompleteStr, ()>,
   map!(ws2!(char!(';')), |_| ())
 );
