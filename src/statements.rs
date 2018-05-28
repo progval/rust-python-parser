@@ -22,7 +22,7 @@ pub enum CompoundStatement {
 named_args!(pub statement(first_indent: usize, indent: usize) <&str, Statement>,
   alt!(
     call!(simple_stmt, first_indent) => { |stmts| Statement::Simple(stmts) }
-  | terminated!(call!(compound_stmt, first_indent, indent), ws!(newline)) => { |stmt| Statement::Compound(Box::new(stmt)) }
+  | terminated!(call!(compound_stmt, first_indent, indent), newline) => { |stmt| Statement::Compound(Box::new(stmt)) }
   )
 );
 
@@ -228,6 +228,37 @@ mod tests {
                         ])
                     ]
                 )
+            )
+        )));
+    }
+
+    #[test]
+    fn test_nested_if() {
+        assert_eq!(compound_stmt("if foo:\n if foo:\n  del bar\n\n\n", 0, 0), Ok(("\n",
+            CompoundStatement::If(
+                vec![
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Compound(Box::new(
+                              CompoundStatement::If(
+                                  vec![
+                                      (
+                                          "foo".to_string(),
+                                          vec![
+                                              Statement::Simple(vec![
+                                                  SmallStatement::Del(vec!["bar".to_string()])
+                                              ])
+                                          ]
+                                      ),
+                                  ],
+                                  None
+                                )
+                            ))
+                        ]
+                    ),
+                ],
+                None
             )
         )));
     }
