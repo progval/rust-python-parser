@@ -15,7 +15,7 @@ pub enum Statement {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompoundStatement {
     // TODO
-    If(Vec<(Test, Vec<Statement>)>, Option<Statement>),
+    If(Vec<(Test, Vec<Statement>)>, Option<Vec<Statement>>),
 }
 
 
@@ -76,11 +76,17 @@ named_args!(compound_stmt(first_indent: usize, indent: usize) <&str, CompoundSta
             tuple!(count!(char!(' '), indent), tag!("elif ")),
             call!(cond_and_block, indent)
           )
+        ),
+        opt!(
+          preceded!(
+            tuple!(count!(char!(' '), indent), tag!("else"), ws2!(char!(':')), newline),
+            call!(block, indent)
+          )
         )
-      ) => { |(if_block, elif_blocks)| {
+      ) => { |(if_block, elif_blocks, else_block)| {
         let mut blocks: Vec<_> = elif_blocks;
         blocks.insert(0, if_block);
-        CompoundStatement::If(blocks, None)
+        CompoundStatement::If(blocks, else_block)
       }}
     ) >> (
       content
@@ -164,6 +170,64 @@ mod tests {
                     ),
                 ],
                 None
+            )
+        )));
+    }
+
+    #[test]
+    fn test_else() {
+        assert_eq!(compound_stmt("if foo:\n del bar\nelse:\n del qux\n ", 0, 0), Ok((" ",
+            CompoundStatement::If(
+                vec![
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Simple(vec![
+                                SmallStatement::Del(vec!["bar".to_string()])
+                            ])
+                        ]
+                    ),
+                ],
+                Some(
+                    vec![
+                        Statement::Simple(vec![
+                            SmallStatement::Del(vec!["qux".to_string()])
+                        ])
+                    ]
+                )
+            )
+        )));
+    }
+
+    #[test]
+    fn test_elif_else() {
+        assert_eq!(compound_stmt("if foo:\n del bar\nelif foo:\n del baz\nelse:\n del qux\n ", 0, 0), Ok((" ",
+            CompoundStatement::If(
+                vec![
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Simple(vec![
+                                SmallStatement::Del(vec!["bar".to_string()])
+                            ])
+                        ]
+                    ),
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Simple(vec![
+                                SmallStatement::Del(vec!["baz".to_string()])
+                            ])
+                        ]
+                    ),
+                ],
+                Some(
+                    vec![
+                        Statement::Simple(vec![
+                            SmallStatement::Del(vec!["qux".to_string()])
+                        ])
+                    ]
+                )
             )
         )));
     }
