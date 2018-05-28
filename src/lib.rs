@@ -103,22 +103,32 @@ named_args!(block(indent: usize) <&str, Vec<Statement>>,
   )
 );
 
+named_args!(cond_and_block(indent: usize) <&str, (String, Vec<Statement>)>,
+  do_parse!(
+    cond: ws2!(tag!("foo")) >>
+    ws2!(char!(':')) >>
+    newline >>
+    block: call!(block, indent) >> (
+      (cond.to_string(), block)
+    )
+  )
+);
+
 named_args!(compound_stmt(first_indent: usize, indent: usize) <&str, CompoundStatement>,
   do_parse!(
     count!(char!(' '), first_indent) >>
     content: alt!(
       tuple!(
-        tag!("if "), ws2!(tag!("foo")), char!(':'), newline,
-        call!(block, indent),
+        preceded!(tag!("if "), call!(cond_and_block, indent)),
         many0!(
-          do_parse!(
-            tag!("elif ") >> test: ws2!(tag!("foo")) >> char!(':') >> newline >>
-            block: call!(block, indent) >> ( (test.to_string(), block) )
+          preceded!(
+            tuple!(count!(char!(' '), indent), tag!("elif ")),
+            call!(cond_and_block, indent)
           )
         )
-      ) => { |(_, if_cond, _, _, if_block, elif_blocks): (_, &str, _, _, _, Vec<(String, Vec<Statement>)>)| {
-        let mut blocks = elif_blocks;
-        blocks.insert(0, (if_cond.to_string(), if_block));
+      ) => { |(if_block, elif_blocks)| {
+        let mut blocks: Vec<_> = elif_blocks;
+        blocks.insert(0, if_block);
         CompoundStatement::If(blocks, None)
       }}
     ) >> (
