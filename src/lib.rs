@@ -103,16 +103,24 @@ named_args!(block(indent: usize) <&str, Vec<Statement>>,
   )
 );
 
-
-
 named_args!(compound_stmt(first_indent: usize, indent: usize) <&str, CompoundStatement>,
   do_parse!(
     count!(char!(' '), first_indent) >>
     content: alt!(
       tuple!(
         tag!("if "), ws2!(tag!("foo")), char!(':'), newline,
-        call!(block, indent)
-      ) => { |(_, foo, _, _, block): (_, &str, _, _, _)| CompoundStatement::If(vec![(foo.to_string(), block)], None)}
+        call!(block, indent),
+        many0!(
+          do_parse!(
+            tag!("elif ") >> test: ws2!(tag!("foo")) >> char!(':') >> newline >>
+            block: call!(block, indent) >> ( (test.to_string(), block) )
+          )
+        )
+      ) => { |(_, if_cond, _, _, if_block, elif_blocks): (_, &str, _, _, _, Vec<(String, Vec<Statement>)>)| {
+        let mut blocks = elif_blocks;
+        blocks.insert(0, (if_cond.to_string(), if_block));
+        CompoundStatement::If(blocks, None)
+      }}
     ) >> (
       content
     )
@@ -201,13 +209,43 @@ mod tests {
     fn test_if() {
         assert_eq!(compound_stmt("if foo:\n del bar\n ", 0, 0), Ok((" ",
             CompoundStatement::If(
-                vec![("foo".to_string(),
-                    vec![
-                        Statement::Simple(vec![
-                            SmallStatement::Del(vec!["bar".to_string()])
-                        ])
-                    ]
-                )],
+                vec![
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Simple(vec![
+                                SmallStatement::Del(vec!["bar".to_string()])
+                            ])
+                        ]
+                    ),
+                ],
+                None
+            )
+        )));
+    }
+
+    #[test]
+    fn test_elif() {
+        assert_eq!(compound_stmt("if foo:\n del bar\nelif foo:\n del baz\n ", 0, 0), Ok((" ",
+            CompoundStatement::If(
+                vec![
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Simple(vec![
+                                SmallStatement::Del(vec!["bar".to_string()])
+                            ])
+                        ]
+                    ),
+                    (
+                        "foo".to_string(),
+                        vec![
+                            Statement::Simple(vec![
+                                SmallStatement::Del(vec!["baz".to_string()])
+                            ])
+                        ]
+                    ),
+                ],
                 None
             )
         )));
