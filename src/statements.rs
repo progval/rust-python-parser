@@ -18,6 +18,8 @@ pub enum Statement {
 pub enum CompoundStatement {
     // TODO
     If(Vec<(Test, Vec<Statement>)>, Option<Vec<Statement>>),
+    For(Vec<Expr>, Vec<Expr>, Vec<Statement>, Option<Vec<Statement>>),
+    While(Test, Vec<Statement>, Option<Vec<Statement>>),
 }
 
 
@@ -67,31 +69,65 @@ named_args!(cond_and_block(indent: usize) <CompleteStr, (String, Vec<Statement>)
 );
 
 named_args!(compound_stmt(first_indent: usize, indent: usize) <CompleteStr, CompoundStatement>,
-  do_parse!(
-    count!(char!(' '), first_indent) >>
-    content: alt!(
-      tuple!(
-        preceded!(tag!("if "), call!(cond_and_block, indent)),
-        many0!(
-          preceded!(
-            tuple!(newline, count!(char!(' '), indent), tag!("elif ")),
-            call!(cond_and_block, indent)
-          )
-        ),
-        opt!(
-          preceded!(
-            tuple!(newline, count!(char!(' '), indent), tag!("else"), ws2!(char!(':'))),
-            call!(block, indent)
-          )
-        )
-      ) => { |(if_block, elif_blocks, else_block)| {
-        let mut blocks: Vec<_> = elif_blocks;
-        blocks.insert(0, if_block);
-        CompoundStatement::If(blocks, else_block)
-      }}
-    ) >> (
-      content
+  preceded!(
+    count!(char!(' '), first_indent),
+    alt!(
+      call!(if_stmt, indent)
+    | call!(for_stmt, indent)
+    | call!(while_stmt, indent)
     )
+  )
+);
+
+named_args!(else_block(indent: usize) <CompleteStr, Option<Vec<Statement>>>,
+  opt!(
+    preceded!(
+      tuple!(newline, count!(char!(' '), indent), tag!("else"), ws2!(char!(':'))),
+      call!(block, indent)
+    )
+  )
+);
+
+named_args!(if_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    tag!("if ") >>
+    if_block: call!(cond_and_block, indent) >>
+    elif_blocks: many0!(
+      preceded!(
+        tuple!(newline, count!(char!(' '), indent), tag!("elif ")),
+        call!(cond_and_block, indent)
+      )
+    ) >>
+    else_block: call!(else_block, indent) >> ({
+      let mut blocks: Vec<_> = elif_blocks;
+      blocks.insert(0, if_block);
+      CompoundStatement::If(blocks, else_block)
+    })
+  )
+);
+
+named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    tag!("for ") >>
+    item: tag!("foo") >>
+    tag!(" in ") >>
+    iterator: tag!("bar") >>
+    ws2!(char!(':')) >>
+    for_block: call!(block, indent) >>
+    else_block: call!(else_block, indent) >> ({
+      CompoundStatement::For(vec![item.to_string()], vec![iterator.to_string()], for_block, else_block)
+    })
+  )
+);
+
+named_args!(while_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    tag!("while ") >>
+    while_block: call!(cond_and_block, indent) >>
+    else_block: call!(else_block, indent) >> ({
+      let (cond, while_block) = while_block;
+      CompoundStatement::While(cond, while_block, else_block)
+    })
   )
 );
 
@@ -177,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn test_else() {
+    fn test_if_else() {
         assert_eq!(compound_stmt(CS("if foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((CS(""),
             CompoundStatement::If(
                 vec![
@@ -335,6 +371,80 @@ mod tests {
                     ),
                 ],
                 None
+            )
+        )));
+    }
+
+    #[test]
+    fn test_while() {
+        assert_eq!(compound_stmt(CS("while foo:\n del bar"), 0, 0), Ok((CS(""),
+            CompoundStatement::While(
+                "foo".to_string(),
+                vec![
+                    Statement::Simple(vec![
+                        SmallStatement::Del(vec!["bar".to_string()])
+                    ])
+                ],
+                None
+            )
+        )));
+    }
+
+    #[test]
+    fn test_while_else() {
+        assert_eq!(compound_stmt(CS("while foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((CS(""),
+            CompoundStatement::While(
+                "foo".to_string(),
+                vec![
+                    Statement::Simple(vec![
+                        SmallStatement::Del(vec!["bar".to_string()])
+                    ])
+                ],
+                Some(
+                    vec![
+                        Statement::Simple(vec![
+                            SmallStatement::Del(vec!["qux".to_string()])
+                        ])
+                    ]
+                )
+            )
+        )));
+    }
+
+    #[test]
+    fn test_for() {
+        assert_eq!(compound_stmt(CS("for foo in bar:\n del baz"), 0, 0), Ok((CS(""),
+            CompoundStatement::For(
+                vec!["foo".to_string()],
+                vec!["bar".to_string()],
+                vec![
+                    Statement::Simple(vec![
+                        SmallStatement::Del(vec!["baz".to_string()])
+                    ])
+                ],
+                None
+            )
+        )));
+    }
+
+    #[test]
+    fn test_for_else() {
+        assert_eq!(compound_stmt(CS("for foo in bar:\n del baz\nelse:\n del qux"), 0, 0), Ok((CS(""),
+            CompoundStatement::For(
+                vec!["foo".to_string()],
+                vec!["bar".to_string()],
+                vec![
+                    Statement::Simple(vec![
+                        SmallStatement::Del(vec!["baz".to_string()])
+                    ])
+                ],
+                Some(
+                    vec![
+                        Statement::Simple(vec![
+                            SmallStatement::Del(vec!["qux".to_string()])
+                        ])
+                    ]
+                )
             )
         )));
     }
