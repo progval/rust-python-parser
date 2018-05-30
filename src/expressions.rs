@@ -44,6 +44,8 @@ pub enum Bop {
     Floordiv,
     Div,
     Power,
+    Lshift,
+    Rshift,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -62,6 +64,44 @@ pub enum Expression {
 named!(test<CompleteStr, Expression>,
   // TODO
   map!(atom, |a| Expression::Atom(a))
+);
+
+named!(shift_expr<CompleteStr, Box<Expression>>,
+  do_parse!(
+    first: arith_expr >>
+    r: fold_many0!(
+      tuple!(
+        ws2!(alt!(
+          tag!("<<") => { |_| Bop::Lshift }
+        | tag!(">>") => { |_| Bop::Rshift }
+        )),
+        arith_expr
+      ),
+      first,
+      |acc, (op, f)| Box::new(Expression::Bop(op, acc, f))
+    ) >> (
+    r
+    )
+  )
+);
+
+named!(arith_expr<CompleteStr, Box<Expression>>,
+  do_parse!(
+    first: term >>
+    r: fold_many0!(
+      tuple!(
+        ws2!(alt!(
+          char!('+') => { |_| Bop::Add }
+        | char!('-') => { |_| Bop::Sub }
+        )),
+        term
+      ),
+      first,
+      |acc, (op, f)| Box::new(Expression::Bop(op, acc, f))
+    ) >> (
+    r
+    )
+  )
 );
 
 named!(term<CompleteStr, Box<Expression>>,
@@ -85,7 +125,6 @@ named!(term<CompleteStr, Box<Expression>>,
     )
   )
 );
-
 
 named!(factor<CompleteStr, Box<Expression>>,
   alt!(
@@ -182,6 +221,53 @@ mod tests {
         assert_eq!(atom(CS(r#""foo" "#)), Ok((CS(" "), Atom::String("foo".to_string()))));
         assert_eq!(atom(CS(r#""fo\"o" "#)), Ok((CS(" "), Atom::String("fo\"o".to_string()))));
         assert_eq!(atom(CS(r#""fo"o" "#)), Ok((CS(r#"o" "#), Atom::String("fo".to_string()))));
+    }
+
+    #[test]
+    fn test_shift_expr() {
+        assert_eq!(shift_expr(CS("foo << bar")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Lshift,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+            ))
+        )));
+
+        assert_eq!(shift_expr(CS("foo >> bar")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Rshift,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_arith_expr() {
+        assert_eq!(arith_expr(CS("foo + bar")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Add,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+            ))
+        )));
+
+        assert_eq!(arith_expr(CS("foo * bar + baz")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Add,
+                Box::new(Expression::Bop(Bop::Mult,
+                    Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                )),
+                Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+            ))
+        )));
+
+        assert_eq!(arith_expr(CS("foo + bar * baz")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Add,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Bop(Bop::Mult,
+                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                    Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                )),
+            ))
+        )));
     }
 
     #[test]
