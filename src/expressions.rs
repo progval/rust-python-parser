@@ -26,12 +26,34 @@ pub enum Subscript {
     Triple(Option<Expression>, Option<Expression>, Option<Expression>),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Uop {
+    Plus,
+    Minus,
+    /// `~`
+    Not,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Bop {
+    Add,
+    Sub,
+    Mult,
+    Div,
+    Power,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Atom(Atom),
     Call(Box<Expression>, Vec<Argument>),
     Subscript(Box<Expression>, Vec<Subscript>),
+    /// `foo.bar`
     Attribute(Box<Expression>, Name),
+    /// Unary operator
+    Uop(Uop, Box<Expression>),
+    /// Binary operator
+    Bop(Bop, Box<Expression>, Box<Expression>),
 }
 
 use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
@@ -99,6 +121,27 @@ named!(atom_expr<CompleteStr, Box<Expression>>,
     ) >> (
       trailers
     )
+  )
+);
+
+named!(power<CompleteStr, Box<Expression>>,
+  do_parse!(
+    lhs: atom_expr >>
+    rhs: opt!(preceded!(ws2!(tag!("**")), factor)) >> (
+      match rhs {
+        Some(r) => Box::new(Expression::Bop(Bop::Power, lhs, r)),
+        None => lhs,
+      }
+    )
+  )
+);
+
+named!(factor<CompleteStr, Box<Expression>>,
+  alt!(
+    preceded!(ws2!(char!('+')), factor) => { |e| Box::new(Expression::Uop(Uop::Plus, e)) }
+  | preceded!(ws2!(char!('-')), factor) => { |e| Box::new(Expression::Uop(Uop::Minus, e)) }
+  | preceded!(ws2!(char!('~')), factor) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
+  | power
   )
 );
 
@@ -312,6 +355,25 @@ mod tests {
                         Expression::Atom(Atom::Name("baz".to_string())),
                     )
                 ],
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_power() {
+        assert_eq!(factor(CS("foo ** bar")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Power,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+            ))
+        )));
+
+        assert_eq!(factor(CS("foo ** + bar")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Power,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Uop(Uop::Plus,
+                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                )),
             ))
         )));
     }
