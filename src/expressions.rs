@@ -56,22 +56,52 @@ pub enum Expression {
     Bop(Bop, Box<Expression>, Box<Expression>),
 }
 
-use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
-named!(atom<CompleteStr, Atom>,
-  alt!(
-    name => { |n| Atom::Name(n) }
-  | delimited!(
-      char!('"'),
-      escaped_transform!(call!(nom::alpha), '\\', nom::anychar),
-      char!('"')
-    ) => { |s| Atom::String(s) }
-  )
-  // TODO
-);
-
 named!(test<CompleteStr, Expression>,
   // TODO
   map!(atom, |a| Expression::Atom(a))
+);
+
+named!(factor<CompleteStr, Box<Expression>>,
+  alt!(
+    preceded!(ws2!(char!('+')), factor) => { |e| Box::new(Expression::Uop(Uop::Plus, e)) }
+  | preceded!(ws2!(char!('-')), factor) => { |e| Box::new(Expression::Uop(Uop::Minus, e)) }
+  | preceded!(ws2!(char!('~')), factor) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
+  | power
+  )
+);
+
+named!(power<CompleteStr, Box<Expression>>,
+  do_parse!(
+    lhs: atom_expr >>
+    rhs: opt!(preceded!(ws2!(tag!("**")), factor)) >> (
+      match rhs {
+        Some(r) => Box::new(Expression::Bop(Bop::Power, lhs, r)),
+        None => lhs,
+      }
+    )
+  )
+);
+
+enum Trailer { Call(Vec<Argument>), Subscript(Vec<Subscript>), Attribute(Name) }
+named!(atom_expr<CompleteStr, Box<Expression>>,
+  do_parse!(
+    lhs: map!(atom, |a| Box::new(Expression::Atom(a))) >>
+    trailers: fold_many0!(
+      alt!(
+        delimited!(char!('('), ws!(separated_list!(char!(','), argument)), char!(')')) => { |args| Trailer::Call(args) }
+      | delimited!(char!('['), ws!(separated_list!(char!(','), subscript)), char!(']')) => { |i| Trailer::Subscript(i) }
+      | preceded!(ws2!(char!('.')), name) => { |name| Trailer::Attribute(name) }
+      ),
+      lhs,
+      |acc, item| Box::new(match item {
+        Trailer::Call(args) => Expression::Call(acc, args),
+        Trailer::Subscript(i) => Expression::Subscript(acc, i),
+        Trailer::Attribute(name) => Expression::Attribute(acc, name),
+      })
+    ) >> (
+      trailers
+    )
+  )
 );
 
 named!(argument<CompleteStr, Argument>,
@@ -102,47 +132,17 @@ named_args!(subscript_trail(first: Option<Expression>) <CompleteStr, Subscript>,
   )
 );
 
-enum Trailer { Call(Vec<Argument>), Subscript(Vec<Subscript>), Attribute(Name) }
-named!(atom_expr<CompleteStr, Box<Expression>>,
-  do_parse!(
-    lhs: map!(atom, |a| Box::new(Expression::Atom(a))) >>
-    trailers: fold_many0!(
-      alt!(
-        delimited!(char!('('), ws!(separated_list!(char!(','), argument)), char!(')')) => { |args| Trailer::Call(args) }
-      | delimited!(char!('['), ws!(separated_list!(char!(','), subscript)), char!(']')) => { |i| Trailer::Subscript(i) }
-      | preceded!(ws2!(char!('.')), name) => { |name| Trailer::Attribute(name) }
-      ),
-      lhs,
-      |acc, item| Box::new(match item {
-        Trailer::Call(args) => Expression::Call(acc, args),
-        Trailer::Subscript(i) => Expression::Subscript(acc, i),
-        Trailer::Attribute(name) => Expression::Attribute(acc, name),
-      })
-    ) >> (
-      trailers
-    )
-  )
-);
-
-named!(power<CompleteStr, Box<Expression>>,
-  do_parse!(
-    lhs: atom_expr >>
-    rhs: opt!(preceded!(ws2!(tag!("**")), factor)) >> (
-      match rhs {
-        Some(r) => Box::new(Expression::Bop(Bop::Power, lhs, r)),
-        None => lhs,
-      }
-    )
-  )
-);
-
-named!(factor<CompleteStr, Box<Expression>>,
+use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
+named!(atom<CompleteStr, Atom>,
   alt!(
-    preceded!(ws2!(char!('+')), factor) => { |e| Box::new(Expression::Uop(Uop::Plus, e)) }
-  | preceded!(ws2!(char!('-')), factor) => { |e| Box::new(Expression::Uop(Uop::Minus, e)) }
-  | preceded!(ws2!(char!('~')), factor) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
-  | power
+    name => { |n| Atom::Name(n) }
+  | delimited!(
+      char!('"'),
+      escaped_transform!(call!(nom::alpha), '\\', nom::anychar),
+      char!('"')
+    ) => { |s| Atom::String(s) }
   )
+  // TODO
 );
 
 #[cfg(test)]
@@ -156,6 +156,25 @@ mod tests {
         assert_eq!(atom(CS(r#""foo" "#)), Ok((CS(" "), Atom::String("foo".to_string()))));
         assert_eq!(atom(CS(r#""fo\"o" "#)), Ok((CS(" "), Atom::String("fo\"o".to_string()))));
         assert_eq!(atom(CS(r#""fo"o" "#)), Ok((CS(r#"o" "#), Atom::String("fo".to_string()))));
+    }
+
+    #[test]
+    fn test_power() {
+        assert_eq!(factor(CS("foo ** bar")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Power,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+            ))
+        )));
+
+        assert_eq!(factor(CS("foo ** + bar")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Power,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Uop(Uop::Plus,
+                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                )),
+            ))
+        )));
     }
 
     #[test]
@@ -355,25 +374,6 @@ mod tests {
                         Expression::Atom(Atom::Name("baz".to_string())),
                     )
                 ],
-            ))
-        )));
-    }
-
-    #[test]
-    fn test_power() {
-        assert_eq!(factor(CS("foo ** bar")), Ok((CS(""),
-            Box::new(Expression::Bop(Bop::Power,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
-            ))
-        )));
-
-        assert_eq!(factor(CS("foo ** + bar")), Ok((CS(""),
-            Box::new(Expression::Bop(Bop::Power,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Uop(Uop::Plus,
-                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
-                )),
             ))
         )));
     }
