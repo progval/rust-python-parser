@@ -39,6 +39,9 @@ pub enum Bop {
     Add,
     Sub,
     Mult,
+    Matmult,
+    Mod,
+    Floordiv,
     Div,
     Power,
 }
@@ -60,6 +63,29 @@ named!(test<CompleteStr, Expression>,
   // TODO
   map!(atom, |a| Expression::Atom(a))
 );
+
+named!(term<CompleteStr, Box<Expression>>,
+  do_parse!(
+    first: factor >>
+    r: fold_many0!(
+      tuple!(
+        ws2!(alt!(
+          char!('*') => { |_| Bop::Mult }
+        | char!('@') => { |_| Bop::Matmult }
+        | char!('%') => { |_| Bop::Mod }
+        | tag!("//") => { |_| Bop::Floordiv }
+        | char!('/') => { |_| Bop::Div }
+        )),
+        factor
+      ),
+      first,
+      |acc, (op, f)| Box::new(Expression::Bop(op, acc, f))
+    ) >> (
+    r
+    )
+  )
+);
+
 
 named!(factor<CompleteStr, Box<Expression>>,
   alt!(
@@ -156,6 +182,36 @@ mod tests {
         assert_eq!(atom(CS(r#""foo" "#)), Ok((CS(" "), Atom::String("foo".to_string()))));
         assert_eq!(atom(CS(r#""fo\"o" "#)), Ok((CS(" "), Atom::String("fo\"o".to_string()))));
         assert_eq!(atom(CS(r#""fo"o" "#)), Ok((CS(r#"o" "#), Atom::String("fo".to_string()))));
+    }
+
+    #[test]
+    fn test_term() {
+        assert_eq!(term(CS("foo * bar")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Mult,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+            ))
+        )));
+
+        assert_eq!(term(CS("foo ** bar * baz")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Mult,
+                Box::new(Expression::Bop(Bop::Power,
+                    Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                )),
+                Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+            ))
+        )));
+
+        assert_eq!(term(CS("foo * bar ** baz")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Mult,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Bop(Bop::Power,
+                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                    Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                )),
+            ))
+        )));
     }
 
     #[test]
