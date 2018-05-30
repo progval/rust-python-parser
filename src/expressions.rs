@@ -46,6 +46,9 @@ pub enum Bop {
     Power,
     Lshift,
     Rshift,
+    And,
+    Xor,
+    Or,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -66,65 +69,65 @@ named!(test<CompleteStr, Expression>,
   map!(atom, |a| Expression::Atom(a))
 );
 
-named!(shift_expr<CompleteStr, Box<Expression>>,
-  do_parse!(
-    first: arith_expr >>
-    r: fold_many0!(
-      tuple!(
-        ws2!(alt!(
-          tag!("<<") => { |_| Bop::Lshift }
-        | tag!(">>") => { |_| Bop::Rshift }
-        )),
-        arith_expr
-      ),
-      first,
-      |acc, (op, f)| Box::new(Expression::Bop(op, acc, f))
-    ) >> (
-    r
-    )
-  )
-);
+macro_rules! bop {
+    ( $name:ident, $child:tt, $tag:ident!($($args:tt)*) ) => {
+    //( $name:ident, $child:tt, $tag1:ident!($($args1:tt)*) => $op1:tt, $( $tag:ident!($($args:tt)*) => $op:tt ),* ) => {
+        named!($name<CompleteStr, Box<Expression>>,
+          do_parse!(
+            first: $child >>
+            r: fold_many0!(
+              tuple!(
+                ws2!($tag!($($args)*)),
+                /*ws2!(alt!(
+                  $tag1($($args1)*) => { |_| $op1 }
+                  $( | $tag($($args)*) => { |_| $op } )*
+                )),*/
+                $child
+              ),
+              first,
+              |acc, (op, f)| Box::new(Expression::Bop(op, acc, f))
+            ) >> (
+            r
+            )
+          )
+        );
+    }
+}
 
-named!(arith_expr<CompleteStr, Box<Expression>>,
-  do_parse!(
-    first: term >>
-    r: fold_many0!(
-      tuple!(
-        ws2!(alt!(
-          char!('+') => { |_| Bop::Add }
-        | char!('-') => { |_| Bop::Sub }
-        )),
-        term
-      ),
-      first,
-      |acc, (op, f)| Box::new(Expression::Bop(op, acc, f))
-    ) >> (
-    r
-    )
-  )
-);
+bop!(or_expr, xor_expr, alt!(
+  char!('|') => { |_| Bop::Or }
+));
 
-named!(term<CompleteStr, Box<Expression>>,
-  do_parse!(
-    first: factor >>
-    r: fold_many0!(
-      tuple!(
-        ws2!(alt!(
-          char!('*') => { |_| Bop::Mult }
-        | char!('@') => { |_| Bop::Matmult }
-        | char!('%') => { |_| Bop::Mod }
-        | tag!("//") => { |_| Bop::Floordiv }
-        | char!('/') => { |_| Bop::Div }
-        )),
-        factor
-      ),
-      first,
-      |acc, (op, f)| Box::new(Expression::Bop(op, acc, f))
-    ) >> (
-    r
-    )
-  )
-);
+bop!(xor_expr, and_expr, alt!(
+  char!('^') => { |_| Bop::Xor }
+));
+
+bop!(and_expr, shift_expr, alt!(
+  char!('&') => { |_| Bop::And }
+));
+
+bop!(shift_expr, arith_expr, alt!(
+  tag!("<<") => { |_| Bop::Lshift }
+| tag!(">>") => { |_| Bop::Rshift }
+));
+
+bop!(arith_expr, term, alt!(
+  char!('+') => { |_| Bop::Add }
+| char!('-') => { |_| Bop::Sub }
+));
+/*
+bop!(arith_expr, term,
+  char!(('+')) => (Bop::Add),
+  char!('-') => (Bop::Sub)
+);*/
+
+bop!(term, factor, alt!(
+  char!('*') => { |_| Bop::Mult }
+| char!('@') => { |_| Bop::Matmult }
+| char!('%') => { |_| Bop::Mod }
+| tag!("//") => { |_| Bop::Floordiv }
+| char!('/') => { |_| Bop::Div }
+));
 
 named!(factor<CompleteStr, Box<Expression>>,
   alt!(
@@ -221,6 +224,35 @@ mod tests {
         assert_eq!(atom(CS(r#""foo" "#)), Ok((CS(" "), Atom::String("foo".to_string()))));
         assert_eq!(atom(CS(r#""fo\"o" "#)), Ok((CS(" "), Atom::String("fo\"o".to_string()))));
         assert_eq!(atom(CS(r#""fo"o" "#)), Ok((CS(r#"o" "#), Atom::String("fo".to_string()))));
+    }
+
+    #[test]
+    fn test_bool_ops() {
+        assert_eq!(or_expr(CS("foo & bar | baz ^ qux")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Or,
+                Box::new(Expression::Bop(Bop::And,
+                    Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                )),
+                Box::new(Expression::Bop(Bop::Xor,
+                    Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                    Box::new(Expression::Atom(Atom::Name("qux".to_string()))),
+                )),
+            ))
+        )));
+
+        assert_eq!(or_expr(CS("foo | bar & baz ^ qux")), Ok((CS(""),
+            Box::new(Expression::Bop(Bop::Or,
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Bop(Bop::Xor,
+                    Box::new(Expression::Bop(Bop::And,
+                        Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                        Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                    )),
+                    Box::new(Expression::Atom(Atom::Name("qux".to_string()))),
+                )),
+            ))
+        )));
     }
 
     #[test]
