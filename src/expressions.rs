@@ -31,6 +31,7 @@ pub enum Uop {
     Plus,
     Minus,
     /// `~`
+    Invert,
     Not,
 }
 
@@ -46,8 +47,24 @@ pub enum Bop {
     Power,
     Lshift,
     Rshift,
+    BitAnd,
+    BitXor,
+    BitOr,
+    /// lower than
+    Lt,
+    /// greater than
+    Gt,
+    Eq,
+    /// lower or equal
+    Leq,
+    /// greater or equal
+    Geq,
+    Neq,
+    In,
+    NotIn,
+    Is,
+    IsNot,
     And,
-    Xor,
     Or,
 }
 
@@ -62,11 +79,23 @@ pub enum Expression {
     Uop(Uop, Box<Expression>),
     /// Binary operator
     Bop(Bop, Box<Expression>, Box<Expression>),
+    /// 1 if 2 else 3
+    Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
 }
 
-named!(test<CompleteStr, Expression>,
+named!(test<CompleteStr, Box<Expression>>,
+  alt!(
+    do_parse!(
+      left: or_test >>
+      right: opt!(tuple!(delimited!(tag!(" if "), or_test, tag!(" else ")), test)) >> (
+        match right {
+          None => left,
+          Some((cond, right)) => Box::new(Expression::Ternary(left, cond, right)),
+        }
+      )
+    )
+  )
   // TODO
-  map!(atom, |a| Expression::Atom(a))
 );
 
 macro_rules! bop {
@@ -94,16 +123,44 @@ macro_rules! bop {
     }
 }
 
+bop!(or_test, and_test, alt!(
+  tag!("or") => { |_| Bop::Or }
+));
+
+bop!(and_test, not_test, alt!(
+  tag!("and") => { |_| Bop::And }
+));
+
+named!(not_test<CompleteStr, Box<Expression>>,
+  alt!(
+    preceded!(ws2!(tag!("not")), comparison) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
+  | comparison
+  )
+);
+
+bop!(comparison, or_expr, alt!(
+  char!('<') => { |_| Bop::Lt }
+| char!('>') => { |_| Bop::Gt }
+| tag!("==") => { |_| Bop::Eq }
+| tag!("<=") => { |_| Bop::Leq }
+| tag!(">=") => { |_| Bop::Geq }
+| tag!("!=") => { |_| Bop::Neq }
+| tag!("in") => { |_| Bop::In }
+| ws2!(tuple!(tag!("not"), tag!("in"))) => { |_| Bop::NotIn }
+| tag!("is") => { |_| Bop::Is }
+| ws2!(tuple!(tag!("is"), tag!("not"))) => { |_| Bop::IsNot }
+));
+
 bop!(or_expr, xor_expr, alt!(
-  char!('|') => { |_| Bop::Or }
+  char!('|') => { |_| Bop::BitOr }
 ));
 
 bop!(xor_expr, and_expr, alt!(
-  char!('^') => { |_| Bop::Xor }
+  char!('^') => { |_| Bop::BitXor }
 ));
 
 bop!(and_expr, shift_expr, alt!(
-  char!('&') => { |_| Bop::And }
+  char!('&') => { |_| Bop::BitAnd }
 ));
 
 bop!(shift_expr, arith_expr, alt!(
@@ -133,7 +190,7 @@ named!(factor<CompleteStr, Box<Expression>>,
   alt!(
     preceded!(ws2!(char!('+')), factor) => { |e| Box::new(Expression::Uop(Uop::Plus, e)) }
   | preceded!(ws2!(char!('-')), factor) => { |e| Box::new(Expression::Uop(Uop::Minus, e)) }
-  | preceded!(ws2!(char!('~')), factor) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
+  | preceded!(ws2!(char!('~')), factor) => { |e| Box::new(Expression::Uop(Uop::Invert, e)) }
   | power
   )
 );
@@ -174,7 +231,7 @@ named!(atom_expr<CompleteStr, Box<Expression>>,
 
 named!(argument<CompleteStr, Argument>,
   // TODO
-  map!(test, |e| Argument::Positional(e))
+  map!(test, |e| Argument::Positional(*e))
 );
 
 named!(subscript<CompleteStr, Subscript>,
@@ -182,8 +239,8 @@ named!(subscript<CompleteStr, Subscript>,
     preceded!(char!(':'), call!(subscript_trail, None))
   | do_parse!(
       first: test >> 
-      r: opt!(preceded!(char!(':'), call!(subscript_trail, Some(first.clone())))) >> ( // FIXME: remove this clone
-        r.unwrap_or(Subscript::Simple(first))
+      r: opt!(preceded!(char!(':'), call!(subscript_trail, Some(*first.clone())))) >> ( // FIXME: remove this clone
+        r.unwrap_or(Subscript::Simple(*first))
       )
     )
   )
@@ -192,9 +249,11 @@ named_args!(subscript_trail(first: Option<Expression>) <CompleteStr, Subscript>,
   do_parse!(
     second: opt!(test) >>
     third: opt!(preceded!(char!(':'), opt!(test))) >> ({
+      let second = second.map(|s| *s);
       match third {
         None => Subscript::Double(first, second),
-        Some(t) => Subscript::Triple(first, second, t),
+        Some(None) => Subscript::Triple(first, second, None),
+        Some(Some(t)) => Subscript::Triple(first, second, Some(*t)),
       }
     })
   )
@@ -227,14 +286,25 @@ mod tests {
     }
 
     #[test]
+    fn test_ternary() {
+        assert_eq!(test(CS("foo if bar else baz")), Ok((CS(""),
+            Box::new(Expression::Ternary(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+            ))
+        )));
+    }
+
+    #[test]
     fn test_bool_ops() {
         assert_eq!(or_expr(CS("foo & bar | baz ^ qux")), Ok((CS(""),
-            Box::new(Expression::Bop(Bop::Or,
-                Box::new(Expression::Bop(Bop::And,
+            Box::new(Expression::Bop(Bop::BitOr,
+                Box::new(Expression::Bop(Bop::BitAnd,
                     Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
                     Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
                 )),
-                Box::new(Expression::Bop(Bop::Xor,
+                Box::new(Expression::Bop(Bop::BitXor,
                     Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
                     Box::new(Expression::Atom(Atom::Name("qux".to_string()))),
                 )),
@@ -242,10 +312,10 @@ mod tests {
         )));
 
         assert_eq!(or_expr(CS("foo | bar & baz ^ qux")), Ok((CS(""),
-            Box::new(Expression::Bop(Bop::Or,
+            Box::new(Expression::Bop(Bop::BitOr,
                 Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Bop(Bop::Xor,
-                    Box::new(Expression::Bop(Bop::And,
+                Box::new(Expression::Bop(Bop::BitXor,
+                    Box::new(Expression::Bop(Bop::BitAnd,
                         Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
                         Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
                     )),
