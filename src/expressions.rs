@@ -61,12 +61,12 @@ enum RawArgument {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-enum Argument<T> {
+pub enum Argument<T> {
     Normal(T),
     Star(Expression),
 }
 #[derive(Clone, Debug, PartialEq)]
-struct Arglist {
+pub struct Arglist {
     positional_args: Vec<Argument<Expression>>,
     keyword_args: Vec<Argument<(Name, Expression)>>,
 }
