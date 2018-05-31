@@ -3,6 +3,44 @@ use nom::types::CompleteStr;
 
 use helpers::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArgumentError {
+    KeywordExpression,
+    PositionalAfterKeyword,
+    StarargsAfterKeyword,
+}
+
+impl ArgumentError {
+    fn to_string(self) -> &'static str {
+        match self {
+            ArgumentError::KeywordExpression => "Keyword cannot be an expression.",
+            ArgumentError::PositionalAfterKeyword => "Positional argument after keyword argument or **kwargs.",
+            ArgumentError::StarargsAfterKeyword => "*args after keyword argument or **kwargs.",
+        }
+    }
+}
+
+impl From<u32> for ArgumentError {
+    fn from(i: u32) -> ArgumentError {
+        match i {
+            1 => ArgumentError::KeywordExpression,
+            2 => ArgumentError::PositionalAfterKeyword,
+            3 => ArgumentError::StarargsAfterKeyword,
+            _ => panic!("Invalid error code.")
+        }
+    }
+}
+
+impl From<ArgumentError> for u32 {
+    fn from(e: ArgumentError) -> u32 {
+        match e {
+            ArgumentError::KeywordExpression => 1,
+            ArgumentError::PositionalAfterKeyword => 2,
+            ArgumentError::StarargsAfterKeyword => 3,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Atom {
     // TODO
@@ -15,8 +53,22 @@ pub enum Atom {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Argument {
+enum RawArgument {
     Positional(Expression),
+    Keyword(Expression, Expression),
+    Starargs(Expression),
+    Kwargs(Expression),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum Argument<T> {
+    Normal(T),
+    Star(Expression),
+}
+#[derive(Clone, Debug, PartialEq)]
+struct Arglist {
+    positional_args: Vec<Argument<Expression>>,
+    keyword_args: Vec<Argument<(Name, Expression)>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -71,7 +123,7 @@ pub enum Bop {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Atom(Atom),
-    Call(Box<Expression>, Vec<Argument>),
+    Call(Box<Expression>, Arglist),
     Subscript(Box<Expression>, Vec<Subscript>),
     /// `foo.bar`
     Attribute(Box<Expression>, Name),
@@ -207,13 +259,13 @@ named!(power<CompleteStr, Box<Expression>>,
   )
 );
 
-enum Trailer { Call(Vec<Argument>), Subscript(Vec<Subscript>), Attribute(Name) }
+enum Trailer { Call(Arglist), Subscript(Vec<Subscript>), Attribute(Name) }
 named!(atom_expr<CompleteStr, Box<Expression>>,
   do_parse!(
     lhs: map!(atom, |a| Box::new(Expression::Atom(a))) >>
     trailers: fold_many0!(
       alt!(
-        delimited!(char!('('), ws!(separated_list!(char!(','), argument)), char!(')')) => { |args| Trailer::Call(args) }
+        delimited!(char!('('), ws!(arglist), char!(')')) => { |args| Trailer::Call(args) }
       | delimited!(char!('['), ws!(separated_list!(char!(','), subscript)), char!(']')) => { |i| Trailer::Subscript(i) }
       | preceded!(ws2!(char!('.')), name) => { |name| Trailer::Attribute(name) }
       ),
@@ -229,9 +281,55 @@ named!(atom_expr<CompleteStr, Box<Expression>>,
   )
 );
 
-named!(argument<CompleteStr, Argument>,
-  // TODO
-  map!(test, |e| Argument::Positional(*e))
+use nom::{IResult, Err, Context, ErrorKind};
+fn build_arglist(input: CompleteStr, args: Vec<RawArgument>) -> IResult<CompleteStr, Arglist> {
+    let fail = |i| {
+        Err(Err::Failure(Context::Code(input, ErrorKind::Custom(i))))
+    };
+    let mut iter = args.into_iter();
+    let mut positional_args = Vec::<Argument<Expression>>::new();
+    let mut keyword_args = Vec::<Argument<(Name, Expression)>>::new();
+    let mut last_arg = iter.next();
+    loop {
+        match last_arg {
+            Some(RawArgument::Positional(arg)) => positional_args.push(Argument::Normal(arg)),
+            Some(RawArgument::Starargs(args)) => positional_args.push(Argument::Star(args)),
+            _ => break,
+        }
+        last_arg = iter.next()
+    }
+    loop {
+        match last_arg {
+            Some(RawArgument::Keyword(Expression::Atom(Atom::Name(name)), arg)) => keyword_args.push(Argument::Normal((name, arg))),
+            Some(RawArgument::Keyword(_, arg)) => return fail(ArgumentError::KeywordExpression.into()),
+            Some(RawArgument::Kwargs(kwargs)) => keyword_args.push(Argument::Star(kwargs)),
+            Some(RawArgument::Positional(_)) => return fail(ArgumentError::PositionalAfterKeyword.into()),
+            Some(RawArgument::Starargs(_)) => return fail(ArgumentError::StarargsAfterKeyword.into()),
+            None => break,
+        }
+        last_arg = iter.next()
+    }
+
+    Ok((input, Arglist { positional_args, keyword_args }))
+}
+named!(arglist<CompleteStr, Arglist>,
+  do_parse!(
+    args: separated_list!(ws!(char!(',')),
+      alt!(
+        tuple!(test, opt!(preceded!(char!('='), test))) => { |(test1, test2): (Box<_>, Option<Box<_>>)| {
+          match test2 {
+              None => RawArgument::Positional(*test1),
+              Some(test2) => RawArgument::Keyword(*test1, *test2),
+          }
+        }}
+      | preceded!(tag!("**"), test) => { |kwargs: Box<_>| RawArgument::Kwargs(*kwargs) }
+      | preceded!(char!('*'), test) => { |args: Box<_>| RawArgument::Starargs(*args) }
+      )
+    ) >>
+    args2: call!(build_arglist, args) >> (
+      args2
+    )
+  )
 );
 
 named!(subscript<CompleteStr, Subscript>,
@@ -422,31 +520,270 @@ mod tests {
     }
 
     #[test]
-    fn test_call() {
+    fn test_call_noarg() {
+        assert_eq!(atom_expr(CS("foo()")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                    ],
+                    keyword_args: vec![
+                    ],
+                },
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_call_positional() {
         assert_eq!(atom_expr(CS("foo(bar)")), Ok((CS(""),
             Box::new(Expression::Call(
                 Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                vec![
-                    Argument::Positional(
-                        Expression::Atom(Atom::Name("bar".to_string()))
-                    ),
-                ],
+                Arglist {
+                    positional_args: vec![
+                        Argument::Normal(
+                            Expression::Atom(Atom::Name("bar".to_string()))
+                        ),
+                    ],
+                    keyword_args: vec![
+                    ],
+                },
             ))
         )));
 
         assert_eq!(atom_expr(CS("foo(bar, baz)")), Ok((CS(""),
             Box::new(Expression::Call(
                 Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                vec![
-                    Argument::Positional(
-                        Expression::Atom(Atom::Name("bar".to_string()))
-                    ),
-                    Argument::Positional(
-                        Expression::Atom(Atom::Name("baz".to_string()))
-                    ),
-                ],
+                Arglist {
+                    positional_args: vec![
+                        Argument::Normal(
+                            Expression::Atom(Atom::Name("bar".to_string()))
+                        ),
+                        Argument::Normal(
+                            Expression::Atom(Atom::Name("baz".to_string()))
+                        ),
+                    ],
+                    keyword_args: vec![
+                    ],
+                },
             ))
         )));
+
+        assert_eq!(atom_expr(CS("foo(bar, baz, *qux)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                        Argument::Normal(
+                            Expression::Atom(Atom::Name("bar".to_string()))
+                        ),
+                        Argument::Normal(
+                            Expression::Atom(Atom::Name("baz".to_string()))
+                        ),
+                        Argument::Star(
+                            Expression::Atom(Atom::Name("qux".to_string()))
+                        ),
+                    ],
+                    keyword_args: vec![
+                    ],
+                },
+            ))
+        )));
+
+        assert_eq!(atom_expr(CS("foo(bar, *baz, qux)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                        Argument::Normal(
+                            Expression::Atom(Atom::Name("bar".to_string()))
+                        ),
+                        Argument::Star(
+                            Expression::Atom(Atom::Name("baz".to_string()))
+                        ),
+                        Argument::Normal(
+                            Expression::Atom(Atom::Name("qux".to_string()))
+                        ),
+                    ],
+                    keyword_args: vec![
+                    ],
+                },
+            ))
+        )));
+
+        assert_eq!(atom_expr(CS("foo(bar, *baz, *qux)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                        Argument::Normal(
+                            Expression::Atom(Atom::Name("bar".to_string()))
+                        ),
+                        Argument::Star(
+                            Expression::Atom(Atom::Name("baz".to_string()))
+                        ),
+                        Argument::Star(
+                            Expression::Atom(Atom::Name("qux".to_string()))
+                        ),
+                    ],
+                    keyword_args: vec![
+                    ],
+                },
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_call_keyword() {
+        assert_eq!(atom_expr(CS("foo(bar1=bar2)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                    ],
+                    keyword_args: vec![
+                        Argument::Normal(
+                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                        ),
+                    ],
+                },
+            ))
+        )));
+
+        assert_eq!(atom_expr(CS("foo(bar1=bar2, baz1=baz2)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                    ],
+                    keyword_args: vec![
+                        Argument::Normal(
+                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                        ),
+                        Argument::Normal(
+                            ("baz1".to_string(), Expression::Atom(Atom::Name("baz2".to_string()))),
+                        ),
+                    ],
+                },
+            ))
+        )));
+
+        assert_eq!(atom_expr(CS("foo(bar1=bar2, baz1=baz2, qux1=qux2)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                    ],
+                    keyword_args: vec![
+                        Argument::Normal(
+                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                        ),
+                        Argument::Normal(
+                            ("baz1".to_string(), Expression::Atom(Atom::Name("baz2".to_string()))),
+                        ),
+                        Argument::Normal(
+                            ("qux1".to_string(), Expression::Atom(Atom::Name("qux2".to_string()))),
+                        ),
+                    ],
+                },
+            ))
+        )));
+
+        assert_eq!(atom_expr(CS("foo(bar1=bar2, baz1=baz2, **qux)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                    ],
+                    keyword_args: vec![
+                        Argument::Normal(
+                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                        ),
+                        Argument::Normal(
+                            ("baz1".to_string(), Expression::Atom(Atom::Name("baz2".to_string()))),
+                        ),
+                        Argument::Star(
+                            Expression::Atom(Atom::Name("qux".to_string())),
+                        ),
+                    ],
+                },
+            ))
+        )));
+
+        assert_eq!(atom_expr(CS("foo(bar1=bar2, **baz, **qux)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                    ],
+                    keyword_args: vec![
+                        Argument::Normal(
+                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                        ),
+                        Argument::Star(
+                            Expression::Atom(Atom::Name("baz".to_string())),
+                        ),
+                        Argument::Star(
+                            Expression::Atom(Atom::Name("qux".to_string())),
+                        ),
+                    ],
+                },
+            ))
+        )));
+
+        assert_eq!(atom_expr(CS("foo(bar1=bar2, **baz, qux1=qux2)")), Ok((CS(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Arglist {
+                    positional_args: vec![
+                    ],
+                    keyword_args: vec![
+                        Argument::Normal(
+                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                        ),
+                        Argument::Star(
+                            Expression::Atom(Atom::Name("baz".to_string())),
+                        ),
+                        Argument::Normal(
+                            ("qux1".to_string(), Expression::Atom(Atom::Name("qux2".to_string()))),
+                        ),
+                    ],
+                },
+            ))
+        )));
+    }
+
+    #[test]
+    fn call_badargs() {
+        assert_eq!(atom_expr(CS("foo(bar()=baz)")),
+            Err(nom::Err::Failure(Context::Code(CS(")"),
+                ErrorKind::Custom(ArgumentError::KeywordExpression.into())
+            )))
+        );
+
+        assert_eq!(atom_expr(CS("foo(**baz, qux)")),
+            Err(nom::Err::Failure(Context::Code(CS(")"),
+                ErrorKind::Custom(ArgumentError::PositionalAfterKeyword.into())
+            )))
+        );
+
+        assert_eq!(atom_expr(CS("foo(**baz, *qux)")),
+            Err(nom::Err::Failure(Context::Code(CS(")"),
+                ErrorKind::Custom(ArgumentError::StarargsAfterKeyword.into())
+            )))
+        );
+
+        assert_eq!(atom_expr(CS("foo(bar1=bar2, qux)")),
+            Err(nom::Err::Failure(Context::Code(CS(")"),
+                ErrorKind::Custom(ArgumentError::PositionalAfterKeyword.into())
+            )))
+        );
+
+        assert_eq!(atom_expr(CS("foo(bar1=bar2, *qux)")),
+            Err(nom::Err::Failure(Context::Code(CS(")"),
+                ErrorKind::Custom(ArgumentError::StarargsAfterKeyword.into())
+            )))
+        );
     }
 
     #[test]

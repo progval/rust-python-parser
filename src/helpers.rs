@@ -29,9 +29,9 @@ pub type Test = String;
 
 pub type Expr = String;
 
-use nom::alpha;
+use nom::alphanumeric;
 named!(pub name<CompleteStr, String>,
-  map!(alpha, |s| s.to_string())
+  map!(alphanumeric, |s| s.to_string())
   // TODO
 );
 
