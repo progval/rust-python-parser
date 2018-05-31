@@ -140,7 +140,7 @@ pub enum Expression {
  *********************************************************************/
 
 // test: or_test ['if' or_test 'else' test] | lambdef
-named!(test<CompleteStr, Box<Expression>>,
+named!(pub test<CompleteStr, Box<Expression>>,
   alt!(
     do_parse!(
       left: or_test >>
@@ -358,7 +358,12 @@ named_args!(subscript_trail(first: Option<Expression>) <CompleteStr, Subscript>,
 // TODO
 
 // testlist: test (',' test)* [',']
-// TODO
+named!(pub testlist<CompleteStr, Vec<Expression>>,
+  separated_nonempty_list!(ws2!(char!(',')), map!(test, |e| *e))
+);
+named!(pub possibly_empty_testlist<CompleteStr, Vec<Expression>>,
+  separated_list!(ws2!(char!(',')), map!(test, |e| *e))
+);
 
 // dictorsetmaker: ( ((test ':' test | '**' expr)
 //                    (comp_for | (',' (test ':' test | '**' expr))* [','])) |

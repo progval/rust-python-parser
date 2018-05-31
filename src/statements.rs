@@ -1,20 +1,27 @@
 use nom::types::CompleteStr;
 
 use helpers::*;
+use expressions::{Expression, possibly_empty_testlist, test};
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SmallStatement {
     // TODO
     Del(Vec<Name>),
+    Break,
+    Continue,
+    Return(Vec<Expression>),
+    RaiseExcFrom(Expression, Expression),
+    RaiseExc(Expression),
+    Raise,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Simple(Vec<SmallStatement>),
     Compound(Box<CompoundStatement>),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum CompoundStatement {
     // TODO
     If(Vec<(Test, Vec<Statement>)>, Option<Vec<Statement>>),
@@ -55,6 +62,7 @@ named_args!(simple_stmt(indent: usize) <CompleteStr, Vec<SmallStatement>>,
 named!(small_stmt<CompleteStr, SmallStatement>,
   alt!(
     del_stmt => { |atoms| SmallStatement::Del(atoms) }
+  | flow_stmt
     // TODO
   )
 );
@@ -87,25 +95,41 @@ named!(del_stmt<CompleteStr, Vec<String>>,
 );
 
 // pass_stmt: 'pass'
-// TODO
+named!(pass_stmt<CompleteStr, ()>,
+  map!(tag!("pass"), |_| ())
+);
 
 // flow_stmt: break_stmt | continue_stmt | return_stmt | raise_stmt | yield_stmt
-// TODO
-
 // break_stmt: 'break'
-// TODO
-
 // continue_stmt: 'continue'
-// TODO
-
 // return_stmt: 'return' [testlist]
-// TODO
-
 // yield_stmt: yield_expr
-// TODO
+named!(flow_stmt<CompleteStr, SmallStatement>,
+  alt!(
+    tag!("break") => { |_| SmallStatement::Break }
+  | tag!("continue") => { |_| SmallStatement::Continue }
+  | preceded!(tag!("return "), ws2!(possibly_empty_testlist)) => { |e| SmallStatement::Return(e) }
+  //| yield_expr // TODO
+  | raise_stmt
+  )
+);
 
 // raise_stmt: 'raise' [test ['from' test]]
-// TODO
+named!(raise_stmt<CompleteStr, SmallStatement>,
+  do_parse!(
+    tag!("raise") >>
+    t: opt!(tuple!(
+      preceded!(char!(' '), test),
+      opt!(ws2!(preceded!(tag!("from"), test)))
+    )) >> (
+      match t {
+        Some((exc, Some(from_exc))) => SmallStatement::RaiseExcFrom(*exc, *from_exc),
+        Some((exc, None)) => SmallStatement::RaiseExc(*exc),
+        None => SmallStatement::Raise,
+      }
+    )
+  )
+);
 
 // global_stmt: 'global' NAME (',' NAME)*
 // TODO
@@ -568,6 +592,27 @@ mod tests {
                         ])
                     ]
                 )
+            )
+        )));
+    }
+
+    #[test]
+    fn test_raise() {
+        use expressions::Atom;
+        assert_eq!(small_stmt(CS("raise")), Ok((CS(""),
+            SmallStatement::Raise
+        )));
+
+        assert_eq!(small_stmt(CS("raise exc")), Ok((CS(""),
+            SmallStatement::RaiseExc(
+                Expression::Atom(Atom::Name("exc".to_string())),
+            )
+        )));
+
+        assert_eq!(small_stmt(CS("raise exc from exc2")), Ok((CS(""),
+            SmallStatement::RaiseExcFrom(
+                Expression::Atom(Atom::Name("exc".to_string())),
+                Expression::Atom(Atom::Name("exc2".to_string())),
             )
         )));
     }
