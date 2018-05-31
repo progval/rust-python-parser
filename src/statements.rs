@@ -23,6 +23,11 @@ pub enum CompoundStatement {
 }
 
 
+/*********************************************************************
+ * Base statement parsers
+ *********************************************************************/
+
+// stmt: simple_stmt | compound_stmt
 named_args!(pub statement(first_indent: usize, indent: usize) <CompleteStr, Statement>,
   alt!(
     call!(simple_stmt, first_indent) => { |stmts| Statement::Simple(stmts) }
@@ -30,6 +35,8 @@ named_args!(pub statement(first_indent: usize, indent: usize) <CompleteStr, Stat
   )
 );
 
+// simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
+// TODO: Use separated_nonempty_list
 named_args!(simple_stmt(indent: usize) <CompleteStr, Vec<SmallStatement>>,
   do_parse!(
     count!(char!(' '), indent) >>
@@ -43,7 +50,107 @@ named_args!(simple_stmt(indent: usize) <CompleteStr, Vec<SmallStatement>>,
   )
 );
 
+// small_stmt: (expr_stmt | del_stmt | pass_stmt | flow_stmt |
+//             import_stmt | global_stmt | nonlocal_stmt | assert_stmt)
+named!(small_stmt<CompleteStr, SmallStatement>,
+  alt!(
+    del_stmt => { |atoms| SmallStatement::Del(atoms) }
+    // TODO
+  )
+);
+
+/*********************************************************************
+ * Expression statements
+ *********************************************************************/
+
+// expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
+//                     ('=' (yield_expr|testlist_star_expr))*)
+// TODO
+
+// annassign: ':' test ['=' test]
+// TODO
+
+// testlist_star_expr: (test|star_expr) (',' (test|star_expr))* [',']
+// TODO
+
+// augassign: ('+=' | '-=' | '*=' | '@=' | '/=' | '%=' | '&=' | '|=' | '^=' |
+//            '<<=' | '>>=' | '**=' | '//=')
+// TODO
+
+/*********************************************************************
+ * Small statements
+ *********************************************************************/
+
+// del_stmt: 'del' exprlist
+named!(del_stmt<CompleteStr, Vec<String>>,
+  preceded!(tag!("del "), ws2!(many1!(name))) // TODO
+);
+
+// pass_stmt: 'pass'
+// TODO
+
+// flow_stmt: break_stmt | continue_stmt | return_stmt | raise_stmt | yield_stmt
+// TODO
+
+// break_stmt: 'break'
+// TODO
+
+// continue_stmt: 'continue'
+// TODO
+
+// return_stmt: 'return' [testlist]
+// TODO
+
+// yield_stmt: yield_expr
+// TODO
+
+// raise_stmt: 'raise' [test ['from' test]]
+// TODO
+
+// global_stmt: 'global' NAME (',' NAME)*
+// TODO
+
+// nonlocal_stmt: 'nonlocal' NAME (',' NAME)*
+// TODO
+
+// assert_stmt: 'assert' test [',' test]
+// TODO
+
+/*********************************************************************
+ * Imports
+ *********************************************************************/
+
+// import_stmt: import_name | import_from
+// TODO
+
+// import_name: 'import' dotted_as_names
+// TODO
+
+// import_from: ('from' (('.' | '...')* dotted_name | ('.' | '...')+)
+//               'import' ('*' | '(' import_as_names ')' | import_as_names))
+// TODO
+
+// import_as_name: NAME ['as' NAME]
+// TODO
+
+// dotted_as_name: dotted_name ['as' NAME]
+// TODO
+
+// import_as_names: import_as_name (',' import_as_name)* [',']
+// TODO
+
+// dotted_as_names: dotted_as_name (',' dotted_as_name)*
+// TODO
+
+// dotted_name: NAME ('.' NAME)*
+
+/*********************************************************************
+ * Blocks
+ *********************************************************************/
+
+// suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 named_args!(block(indent: usize) <CompleteStr, Vec<Statement>>,
+  // TODO: simple_stmt
   do_parse!(
     newline >>
     new_indent: do_parse!(
@@ -57,7 +164,6 @@ named_args!(block(indent: usize) <CompleteStr, Vec<Statement>>,
     )
   )
 );
-
 named_args!(cond_and_block(indent: usize) <CompleteStr, (String, Vec<Statement>)>,
   do_parse!(
     cond: ws2!(tag!("foo")) >>
@@ -68,6 +174,8 @@ named_args!(cond_and_block(indent: usize) <CompleteStr, (String, Vec<Statement>)
   )
 );
 
+
+// compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 named_args!(compound_stmt(first_indent: usize, indent: usize) <CompleteStr, CompoundStatement>,
   preceded!(
     count!(char!(' '), first_indent),
@@ -75,9 +183,13 @@ named_args!(compound_stmt(first_indent: usize, indent: usize) <CompleteStr, Comp
       call!(if_stmt, indent)
     | call!(for_stmt, indent)
     | call!(while_stmt, indent)
+    // TODO
     )
   )
 );
+
+// async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
+// TODO
 
 named_args!(else_block(indent: usize) <CompleteStr, Option<Vec<Statement>>>,
   opt!(
@@ -88,6 +200,7 @@ named_args!(else_block(indent: usize) <CompleteStr, Option<Vec<Statement>>>,
   )
 );
 
+// if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 named_args!(if_stmt(indent: usize) <CompleteStr, CompoundStatement>,
   do_parse!(
     tag!("if ") >>
@@ -106,6 +219,19 @@ named_args!(if_stmt(indent: usize) <CompleteStr, CompoundStatement>,
   )
 );
 
+// while_stmt: 'while' test ':' suite ['else' ':' suite]
+named_args!(while_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    tag!("while ") >>
+    while_block: call!(cond_and_block, indent) >>
+    else_block: call!(else_block, indent) >> ({
+      let (cond, while_block) = while_block;
+      CompoundStatement::While(cond, while_block, else_block)
+    })
+  )
+);
+
+// for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
 named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
   do_parse!(
     tag!("for ") >>
@@ -120,28 +246,25 @@ named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
   )
 );
 
-named_args!(while_stmt(indent: usize) <CompleteStr, CompoundStatement>,
-  do_parse!(
-    tag!("while ") >>
-    while_block: call!(cond_and_block, indent) >>
-    else_block: call!(else_block, indent) >> ({
-      let (cond, while_block) = while_block;
-      CompoundStatement::While(cond, while_block, else_block)
-    })
-  )
-);
+// try_stmt: ('try' ':' suite
+//            ((except_clause ':' suite)+
+//             ['else' ':' suite]
+//             ['finally' ':' suite] |
+//             'finally' ':' suite))
+// TODO
 
-named!(small_stmt<CompleteStr, SmallStatement>,
-  alt!(
-    del_stmt => { |atoms| SmallStatement::Del(atoms) }
-    // TODO
-  )
-);
+// with_stmt: 'with' with_item (',' with_item)*  ':' suite
+// TODO
 
-named!(del_stmt<CompleteStr, Vec<String>>,
-  preceded!(tag!("del "), ws2!(many1!(name)))
-  // TODO
-);
+// with_item: test ['as' expr]
+// TODO
+
+// except_clause: 'except' [test ['as' NAME]]
+// TODO
+
+/*********************************************************************
+ * Unit tests
+ *********************************************************************/
 
 #[cfg(test)]
 mod tests {

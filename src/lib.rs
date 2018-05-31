@@ -17,12 +17,22 @@ use helpers::*;
 use expressions::*;
 use statements::*;
 
+// single_input: NEWLINE | simple_stmt | compound_stmt NEWLINE
 named!(pub parse_single_input <CompleteStr, Option<Statement>>,
   alt!(
     newline => { |_| None }
   | call!(statement, 0, 0) => { |stmt| Some(stmt) }
   )
 );
+
+// file_input: (NEWLINE | stmt)* ENDMARKER
+// TODO
+
+// eval_input: testlist NEWLINE* ENDMARKER
+// TODO
+
+// encoding_decl: NAME
+// TODO
 
 #[cfg(test)]
 mod tests {

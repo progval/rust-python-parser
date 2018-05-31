@@ -135,6 +135,11 @@ pub enum Expression {
     Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
 }
 
+/*********************************************************************
+ * Decorators
+ *********************************************************************/
+
+// test: or_test ['if' or_test 'else' test] | lambdef
 named!(test<CompleteStr, Box<Expression>>,
   alt!(
     do_parse!(
@@ -149,6 +154,15 @@ named!(test<CompleteStr, Box<Expression>>,
   )
   // TODO
 );
+
+// test_nocond: or_test | lambdef_nocond
+// TODO
+
+// lambdef: 'lambda' [varargslist] ':' test
+// TODO
+
+// lambdef_nocond: 'lambda' [varargslist] ':' test_nocond
+// TODO
 
 macro_rules! bop {
     ( $name:ident, $child:tt, $tag:ident!($($args:tt)*) ) => {
@@ -175,14 +189,17 @@ macro_rules! bop {
     }
 }
 
+// or_test: and_test ('or' and_test)*
 bop!(or_test, and_test, alt!(
   tag!("or") => { |_| Bop::Or }
 ));
 
+// and_test: not_test ('and' not_test)*
 bop!(and_test, not_test, alt!(
   tag!("and") => { |_| Bop::And }
 ));
 
+// not_test: 'not' not_test | comparison
 named!(not_test<CompleteStr, Box<Expression>>,
   alt!(
     preceded!(ws2!(tag!("not")), comparison) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
@@ -190,7 +207,9 @@ named!(not_test<CompleteStr, Box<Expression>>,
   )
 );
 
-bop!(comparison, or_expr, alt!(
+// comparison: expr (comp_op expr)*
+// comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
+bop!(comparison, expr, alt!(
   char!('<') => { |_| Bop::Lt }
 | char!('>') => { |_| Bop::Gt }
 | tag!("==") => { |_| Bop::Eq }
@@ -203,33 +222,36 @@ bop!(comparison, or_expr, alt!(
 | ws2!(tuple!(tag!("is"), tag!("not"))) => { |_| Bop::IsNot }
 ));
 
-bop!(or_expr, xor_expr, alt!(
+// star_expr: '*' expr
+
+// expr: xor_expr ('|' xor_expr)*
+bop!(expr, xor_expr, alt!(
   char!('|') => { |_| Bop::BitOr }
 ));
 
+// xor_expr: and_expr ('^' and_expr)*
 bop!(xor_expr, and_expr, alt!(
   char!('^') => { |_| Bop::BitXor }
 ));
 
+// and_expr: shift_expr ('&' shift_expr)*
 bop!(and_expr, shift_expr, alt!(
   char!('&') => { |_| Bop::BitAnd }
 ));
 
+// shift_expr: arith_expr (('<<'|'>>') arith_expr)*
 bop!(shift_expr, arith_expr, alt!(
   tag!("<<") => { |_| Bop::Lshift }
 | tag!(">>") => { |_| Bop::Rshift }
 ));
 
+// arith_expr: term (('+'|'-') term)*
 bop!(arith_expr, term, alt!(
   char!('+') => { |_| Bop::Add }
 | char!('-') => { |_| Bop::Sub }
 ));
-/*
-bop!(arith_expr, term,
-  char!(('+')) => (Bop::Add),
-  char!('-') => (Bop::Sub)
-);*/
 
+// term: factor (('*'|'@'|'/'|'%'|'//') factor)*
 bop!(term, factor, alt!(
   char!('*') => { |_| Bop::Mult }
 | char!('@') => { |_| Bop::Matmult }
@@ -238,6 +260,7 @@ bop!(term, factor, alt!(
 | char!('/') => { |_| Bop::Div }
 ));
 
+// factor: ('+'|'-'|'~') factor | power
 named!(factor<CompleteStr, Box<Expression>>,
   alt!(
     preceded!(ws2!(char!('+')), factor) => { |e| Box::new(Expression::Uop(Uop::Plus, e)) }
@@ -247,6 +270,7 @@ named!(factor<CompleteStr, Box<Expression>>,
   )
 );
 
+// power: atom_expr ['**' factor]
 named!(power<CompleteStr, Box<Expression>>,
   do_parse!(
     lhs: atom_expr >>
@@ -259,6 +283,9 @@ named!(power<CompleteStr, Box<Expression>>,
   )
 );
 
+// atom_expr: [AWAIT] atom trailer*
+// trailer: '(' [arglist] ')' | '[' subscriptlist ']' | '.' NAME
+// subscriptlist: subscript (',' subscript)* [',']
 enum Trailer { Call(Arglist), Subscript(Vec<Subscript>), Attribute(Name) }
 named!(atom_expr<CompleteStr, Box<Expression>>,
   do_parse!(
@@ -280,6 +307,78 @@ named!(atom_expr<CompleteStr, Box<Expression>>,
     )
   )
 );
+
+// atom: ('(' [yield_expr|testlist_comp] ')' |
+//       '[' [testlist_comp] ']' |
+//       '{' [dictorsetmaker] '}' |
+//       NAME | NUMBER | STRING+ | '...' | 'None' | 'True' | 'False')
+use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
+named!(atom<CompleteStr, Atom>,
+  alt!(
+    name => { |n| Atom::Name(n) }
+  | delimited!(
+      char!('"'),
+      escaped_transform!(call!(nom::alpha), '\\', nom::anychar),
+      char!('"')
+    ) => { |s| Atom::String(s) }
+  )
+  // TODO
+);
+
+// testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
+// TODO
+
+// subscript: test | [test] ':' [test] [sliceop]
+named!(subscript<CompleteStr, Subscript>,
+  alt!(
+    preceded!(char!(':'), call!(subscript_trail, None))
+  | do_parse!(
+      first: test >> 
+      r: opt!(preceded!(char!(':'), call!(subscript_trail, Some(*first.clone())))) >> ( // FIXME: remove this clone
+        r.unwrap_or(Subscript::Simple(*first))
+      )
+    )
+  )
+);
+named_args!(subscript_trail(first: Option<Expression>) <CompleteStr, Subscript>,
+  do_parse!(
+    second: opt!(test) >>
+    third: opt!(preceded!(char!(':'), opt!(test))) >> ({
+      let second = second.map(|s| *s);
+      match third {
+        None => Subscript::Double(first, second),
+        Some(None) => Subscript::Triple(first, second, None),
+        Some(Some(t)) => Subscript::Triple(first, second, Some(*t)),
+      }
+    })
+  )
+);
+
+// exprlist: (expr|star_expr) (',' (expr|star_expr))* [',']
+// TODO
+
+// testlist: test (',' test)* [',']
+// TODO
+
+// dictorsetmaker: ( ((test ':' test | '**' expr)
+//                    (comp_for | (',' (test ':' test | '**' expr))* [','])) |
+//                   ((test | star_expr)
+//                    (comp_for | (',' (test | star_expr))* [','])) )
+// TODO
+
+// classdef: 'class' NAME ['(' [arglist] ')'] ':' suite
+// TODO
+
+/*********************************************************************
+ * Argument list
+ *********************************************************************/
+
+// arglist: argument (',' argument)*  [',']
+
+// argument: ( test [comp_for] |
+//             test '=' test |
+//             '**' test |
+//             '*' test )
 
 use nom::{IResult, Err, Context, ErrorKind};
 fn build_arglist(input: CompleteStr, args: Vec<RawArgument>) -> IResult<CompleteStr, Arglist> {
@@ -332,43 +431,28 @@ named!(arglist<CompleteStr, Arglist>,
   )
 );
 
-named!(subscript<CompleteStr, Subscript>,
-  alt!(
-    preceded!(char!(':'), call!(subscript_trail, None))
-  | do_parse!(
-      first: test >> 
-      r: opt!(preceded!(char!(':'), call!(subscript_trail, Some(*first.clone())))) >> ( // FIXME: remove this clone
-        r.unwrap_or(Subscript::Simple(*first))
-      )
-    )
-  )
-);
-named_args!(subscript_trail(first: Option<Expression>) <CompleteStr, Subscript>,
-  do_parse!(
-    second: opt!(test) >>
-    third: opt!(preceded!(char!(':'), opt!(test))) >> ({
-      let second = second.map(|s| *s);
-      match third {
-        None => Subscript::Double(first, second),
-        Some(None) => Subscript::Triple(first, second, None),
-        Some(Some(t)) => Subscript::Triple(first, second, Some(*t)),
-      }
-    })
-  )
-);
+/*********************************************************************
+ * Iterator expressions
+ *********************************************************************/
 
-use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
-named!(atom<CompleteStr, Atom>,
-  alt!(
-    name => { |n| Atom::Name(n) }
-  | delimited!(
-      char!('"'),
-      escaped_transform!(call!(nom::alpha), '\\', nom::anychar),
-      char!('"')
-    ) => { |s| Atom::String(s) }
-  )
-  // TODO
-);
+// comp_iter: comp_for | comp_if
+// TODO
+
+// comp_for: [ASYNC] 'for' exprlist 'in' or_test [comp_iter]
+// TODO
+
+// comp_if: 'if' test_nocond [comp_iter]
+// TODO
+
+// yield_expr: 'yield' [yield_arg]
+// TODO
+
+// yield_arg: 'from' test | testlist
+// TODO
+
+/*********************************************************************
+ * Unit tests
+ *********************************************************************/
 
 #[cfg(test)]
 mod tests {
@@ -396,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_bool_ops() {
-        assert_eq!(or_expr(CS("foo & bar | baz ^ qux")), Ok((CS(""),
+        assert_eq!(expr(CS("foo & bar | baz ^ qux")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::BitOr,
                 Box::new(Expression::Bop(Bop::BitAnd,
                     Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
@@ -409,7 +493,7 @@ mod tests {
             ))
         )));
 
-        assert_eq!(or_expr(CS("foo | bar & baz ^ qux")), Ok((CS(""),
+        assert_eq!(expr(CS("foo | bar & baz ^ qux")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::BitOr,
                 Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
                 Box::new(Expression::Bop(Bop::BitXor,
