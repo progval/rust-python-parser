@@ -1,11 +1,29 @@
 use nom::types::CompleteStr;
 
 use helpers::*;
-use expressions::{Expression, possibly_empty_testlist, test};
+use expressions::{Expression, possibly_empty_testlist, test, yield_expr};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Import {
+    /// `from x import y`
+    ImportFrom {
+        /// For `from .....x import y`, this is 5
+        leading_dots: usize,
+        /// For `from .....x import y`, this `x`
+        path: Vec<Name>,
+        /// For `from x import y, z`, this `vec![(y, None), (vec![z], None)]`.
+        /// For `from x import y as z`, this `vec![(y, Some(z))]`.
+        /// For `from x import *`, this is `vec![]`.
+        names: Vec<(Name, Option<Name>)>
+    },
+    /// `import x.y as z, foo.bar` is
+    /// `Import::Import(vec![(vec![x, y], Some(z)), (vec![foo, bar], None)])`.
+    Import { names: Vec<(Vec<Name>, Option<Name>)> },
+}
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum SmallStatement {
-    // TODO
+pub enum Statement {
+    Pass,
     Del(Vec<Name>),
     Break,
     Continue,
@@ -13,11 +31,13 @@ pub enum SmallStatement {
     RaiseExcFrom(Expression, Expression),
     RaiseExc(Expression),
     Raise,
-}
+    Global(Vec<Name>),
+    Nonlocal(Vec<Name>),
+    Assert(Expression, Option<Expression>),
+    Import(Import),
+    Expression(Expression),
+    // TODO
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum Statement {
-    Simple(Vec<SmallStatement>),
     Compound(Box<CompoundStatement>),
 }
 
@@ -35,34 +55,35 @@ pub enum CompoundStatement {
  *********************************************************************/
 
 // stmt: simple_stmt | compound_stmt
-named_args!(pub statement(first_indent: usize, indent: usize) <CompleteStr, Statement>,
+named_args!(pub statement(first_indent: usize, indent: usize) <CompleteStr, Vec<Statement>>,
   alt!(
-    call!(simple_stmt, first_indent) => { |stmts| Statement::Simple(stmts) }
-  | call!(compound_stmt, first_indent, indent) => { |stmt| Statement::Compound(Box::new(stmt)) }
+    call!(simple_stmt, first_indent)
+  | call!(compound_stmt, first_indent, indent) => { |stmt| vec![Statement::Compound(Box::new(stmt))] }
   )
 );
 
 // simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
-// TODO: Use separated_nonempty_list
-named_args!(simple_stmt(indent: usize) <CompleteStr, Vec<SmallStatement>>,
+named_args!(simple_stmt(indent: usize) <CompleteStr, Vec<Statement>>,
   do_parse!(
     count!(char!(' '), indent) >>
-    first_stmts: many0!(terminated!(call!(small_stmt), semicolon)) >>
-    last_stmt: small_stmt >>
-    opt!(semicolon) >> ({
-      let mut stmts = first_stmts;
-      stmts.push(last_stmt);
+    stmts: separated_nonempty_list!(semicolon, call!(small_stmt)) >>
+    opt!(semicolon) >> (
       stmts
-    })
+    )
   )
 );
 
 // small_stmt: (expr_stmt | del_stmt | pass_stmt | flow_stmt |
 //             import_stmt | global_stmt | nonlocal_stmt | assert_stmt)
-named!(small_stmt<CompleteStr, SmallStatement>,
+named!(small_stmt<CompleteStr, Statement>,
   alt!(
-    del_stmt => { |atoms| SmallStatement::Del(atoms) }
+    del_stmt => { |atoms| Statement::Del(atoms) }
+  | pass_stmt
   | flow_stmt
+  | import_stmt
+  | global_stmt
+  | nonlocal_stmt
+  | assert_stmt
     // TODO
   )
 );
@@ -91,12 +112,12 @@ named!(small_stmt<CompleteStr, SmallStatement>,
 
 // del_stmt: 'del' exprlist
 named!(del_stmt<CompleteStr, Vec<String>>,
-  preceded!(tag!("del "), ws2!(many1!(name))) // TODO
+  preceded!(tuple!(tag!("del"), space_sep2), ws2!(many1!(name)))
 );
 
 // pass_stmt: 'pass'
-named!(pass_stmt<CompleteStr, ()>,
-  map!(tag!("pass"), |_| ())
+named!(pass_stmt<CompleteStr, Statement>,
+  map!(tag!("pass"), |_| Statement::Pass)
 );
 
 // flow_stmt: break_stmt | continue_stmt | return_stmt | raise_stmt | yield_stmt
@@ -104,69 +125,149 @@ named!(pass_stmt<CompleteStr, ()>,
 // continue_stmt: 'continue'
 // return_stmt: 'return' [testlist]
 // yield_stmt: yield_expr
-named!(flow_stmt<CompleteStr, SmallStatement>,
+named!(flow_stmt<CompleteStr, Statement>,
   alt!(
-    tag!("break") => { |_| SmallStatement::Break }
-  | tag!("continue") => { |_| SmallStatement::Continue }
-  | preceded!(tag!("return "), ws2!(possibly_empty_testlist)) => { |e| SmallStatement::Return(e) }
-  //| yield_expr // TODO
+    tag!("break") => { |_| Statement::Break }
+  | tag!("continue") => { |_| Statement::Continue }
+  | preceded!(tuple!(tag!("return"), space_sep2), ws2!(possibly_empty_testlist)) => { |e| Statement::Return(e) }
+  | yield_expr => { |e: Box<_>| Statement::Expression(*e) }
   | raise_stmt
   )
 );
 
 // raise_stmt: 'raise' [test ['from' test]]
-named!(raise_stmt<CompleteStr, SmallStatement>,
+named!(raise_stmt<CompleteStr, Statement>,
   do_parse!(
     tag!("raise") >>
     t: opt!(tuple!(
-      preceded!(char!(' '), test),
-      opt!(ws2!(preceded!(tag!("from"), test)))
+      preceded!(space_sep2, test),
+      opt!(preceded!(tuple!(space_sep2, tag!("from"), space_sep2), test))
     )) >> (
       match t {
-        Some((exc, Some(from_exc))) => SmallStatement::RaiseExcFrom(*exc, *from_exc),
-        Some((exc, None)) => SmallStatement::RaiseExc(*exc),
-        None => SmallStatement::Raise,
+        Some((exc, Some(from_exc))) => Statement::RaiseExcFrom(*exc, *from_exc),
+        Some((exc, None)) => Statement::RaiseExc(*exc),
+        None => Statement::Raise,
       }
     )
   )
 );
 
 // global_stmt: 'global' NAME (',' NAME)*
-// TODO
+named!(global_stmt<CompleteStr, Statement>,
+  map!(preceded!(tuple!(tag!("global"), space_sep2),
+    ws2!(separated_nonempty_list!(char!(','), name))
+  ), |names| Statement::Global(names))
+);
 
 // nonlocal_stmt: 'nonlocal' NAME (',' NAME)*
-// TODO
+named!(nonlocal_stmt<CompleteStr, Statement>,
+  map!(preceded!(tuple!(tag!("nonlocal"), space_sep2),
+    ws2!(separated_nonempty_list!(char!(','), name))
+  ), |names| Statement::Nonlocal(names))
+);
 
 // assert_stmt: 'assert' test [',' test]
-// TODO
+named!(assert_stmt<CompleteStr, Statement>,
+  do_parse!(
+    tag!("assert") >>
+    space_sep2 >>
+    assertion: test >>
+    msg: opt!(preceded!(ws2!(char!(',')), test)) >> (
+      Statement::Assert(*assertion, msg.map(|m| *m))
+    )
+  )
+);
 
 /*********************************************************************
  * Imports
  *********************************************************************/
 
 // import_stmt: import_name | import_from
-// TODO
+named!(import_stmt<CompleteStr, Statement>,
+  alt!(
+    import_name => { |i| Statement::Import(i) }
+  | import_from => { |i| Statement::Import(i) }
+  )
+);
 
 // import_name: 'import' dotted_as_names
-// TODO
+named!(import_name<CompleteStr, Import>,
+  map!(preceded!(tuple!(tag!("import"), space_sep2), dotted_as_names),
+    |names| Import::Import { names }
+  )
+);
 
 // import_from: ('from' (('.' | '...')* dotted_name | ('.' | '...')+)
 //               'import' ('*' | '(' import_as_names ')' | import_as_names))
-// TODO
+//
+// the explicit presence of '...' is for parsers that use a lexer, because
+// they would recognize ... as an ellipsis.
+named!(import_from<CompleteStr, Import>,
+  do_parse!(
+    tag!("from") >>
+    space_sep2 >>
+    import_from: alt!(
+      preceded!(char!('.'), do_parse!(
+        leading_dots: ws2!(map!(many0!(char!('.')), |dots| dots.len()+1)) >>
+        from_name: opt!(dotted_name) >> (
+          (leading_dots, from_name.unwrap_or(Vec::new()))
+        )
+      ))
+    | dotted_name => { |n| (0, n) }
+    ) >>
+    space_sep2 >>
+    tag!("import") >>
+    space_sep2 >>
+    names: alt!(
+      char!('*') => { |_| Vec::new() }
+    | ws2!(delimited!(char!('('), import_as_names, char!(')')))
+    | import_as_names
+    ) >> ({
+      let (leading_dots, path) = import_from;
+      Import::ImportFrom { leading_dots, path, names }
+    })
+  )
+);
+
 
 // import_as_name: NAME ['as' NAME]
-// TODO
+named!(import_as_name<CompleteStr, (Name, Option<Name>)>,
+  tuple!(name, opt!(do_parse!(
+    space_sep2 >>
+    tag!("as") >>
+    space_sep2 >>
+    name: name >> (
+      name
+    )
+  )))
+);
 
 // dotted_as_name: dotted_name ['as' NAME]
-// TODO
+named!(dotted_as_name<CompleteStr, (Vec<Name>, Option<Name>)>,
+  tuple!(dotted_name, opt!(do_parse!(
+    space_sep2 >>
+    tag!("as") >>
+    space_sep2 >>
+    name: name >> (
+      name
+    )
+  )))
+);
 
 // import_as_names: import_as_name (',' import_as_name)* [',']
-// TODO
+named!(import_as_names<CompleteStr, Vec<(Name, Option<Name>)>>,
+  ws2!(terminated!(separated_nonempty_list!(char!(','), import_as_name), opt!(char!(','))))
+);
 
 // dotted_as_names: dotted_as_name (',' dotted_as_name)*
-// TODO
+named!(dotted_as_names<CompleteStr, Vec<(Vec<Name>, Option<Name>)>>,
+  separated_nonempty_list!(ws2!(char!(',')), dotted_as_name)
+);
 
 // dotted_name: NAME ('.' NAME)*
+named!(dotted_name<CompleteStr, Vec<Name>>,
+  separated_nonempty_list!(ws2!(char!('.')), name)
+);
 
 /*********************************************************************
  * Blocks
@@ -174,18 +275,24 @@ named!(raise_stmt<CompleteStr, SmallStatement>,
 
 // suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 named_args!(block(indent: usize) <CompleteStr, Vec<Statement>>,
-  // TODO: simple_stmt
-  do_parse!(
-    newline >>
-    new_indent: do_parse!(
-      count!(char!(' '), indent) >>
-      new_spaces: many1!(char!(' ')) >> ({
-        indent + new_spaces.len()
-      })
-    ) >>
-    stmt: many1!(call!(statement, 0, new_indent)) >> (
-      stmt
+  alt!(
+    do_parse!(
+      newline >>
+      new_indent: do_parse!(
+        count!(char!(' '), indent) >>
+        new_spaces: many1!(char!(' ')) >> ({
+          indent + new_spaces.len()
+        })
+      ) >>
+      stmts: fold_many1!(
+        call!(statement, 0, new_indent),
+        Vec::new(),
+        |mut acc: Vec<_>, stmt| { acc.extend(stmt); acc }
+      ) >> (
+        stmts
+      )
     )
+  | call!(simple_stmt, 0)
   )
 );
 named_args!(cond_and_block(indent: usize) <CompleteStr, (String, Vec<Statement>)>,
@@ -286,6 +393,9 @@ named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 // except_clause: 'except' [test ['as' NAME]]
 // TODO
 
+// classdef: 'class' NAME ['(' [arglist] ')'] ':' suite
+// TODO
+
 /*********************************************************************
  * Unit tests
  *********************************************************************/
@@ -297,17 +407,17 @@ mod tests {
 
     #[test]
     fn test_statement_indent() {
-        assert_eq!(statement(CS("del foo"), 0, 0), Ok((CS(""), Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()])]))));
-        assert_eq!(statement(CS(" del foo"), 1, 1), Ok((CS(""), Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()])]))));
+        assert_eq!(statement(CS("del foo"), 0, 0), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_eq!(statement(CS(" del foo"), 1, 1), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
         assert!(statement(CS("del foo"), 1, 1).is_err());
         assert!(statement(CS(" del foo"), 0, 0).is_err());
     }
 
     #[test]
     fn test_block() {
-        assert_eq!(block(CS("\n del foo"), 0), Ok((CS(""), vec![Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()])])])));
-        assert_eq!(block(CS("\n  del foo"), 1), Ok((CS(""), vec![Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()])])])));
-        assert_eq!(block(CS("\n      del foo"), 1), Ok((CS(""), vec![Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()])])])));
+        assert_eq!(block(CS("\n del foo"), 0), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_eq!(block(CS("\n  del foo"), 1), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_eq!(block(CS("\n      del foo"), 1), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
         assert!(block(CS("\ndel foo"), 0).is_err());
         assert!(block(CS("\ndel foo"), 1).is_err());
         assert!(block(CS("\n del foo"), 1).is_err());
@@ -321,9 +431,7 @@ mod tests {
                     (
                         "foo".to_string(),
                         vec![
-                            Statement::Simple(vec![
-                                SmallStatement::Del(vec!["bar".to_string()])
-                            ])
+                            Statement::Del(vec!["bar".to_string()])
                         ]
                     ),
                 ],
@@ -340,17 +448,13 @@ mod tests {
                     (
                         "foo".to_string(),
                         vec![
-                            Statement::Simple(vec![
-                                SmallStatement::Del(vec!["bar".to_string()])
-                            ])
+                            Statement::Del(vec!["bar".to_string()])
                         ]
                     ),
                     (
                         "foo".to_string(),
                         vec![
-                            Statement::Simple(vec![
-                                SmallStatement::Del(vec!["baz".to_string()])
-                            ])
+                            Statement::Del(vec!["baz".to_string()])
                         ]
                     ),
                 ],
@@ -367,17 +471,13 @@ mod tests {
                     (
                         "foo".to_string(),
                         vec![
-                            Statement::Simple(vec![
-                                SmallStatement::Del(vec!["bar".to_string()])
-                            ])
+                            Statement::Del(vec!["bar".to_string()])
                         ]
                     ),
                 ],
                 Some(
                     vec![
-                        Statement::Simple(vec![
-                            SmallStatement::Del(vec!["qux".to_string()])
-                        ])
+                        Statement::Del(vec!["qux".to_string()])
                     ]
                 )
             )
@@ -392,25 +492,19 @@ mod tests {
                     (
                         "foo".to_string(),
                         vec![
-                            Statement::Simple(vec![
-                                SmallStatement::Del(vec!["bar".to_string()])
-                            ])
+                            Statement::Del(vec!["bar".to_string()])
                         ]
                     ),
                     (
                         "foo".to_string(),
                         vec![
-                            Statement::Simple(vec![
-                                SmallStatement::Del(vec!["baz".to_string()])
-                            ])
+                            Statement::Del(vec!["baz".to_string()])
                         ]
                     ),
                 ],
                 Some(
                     vec![
-                        Statement::Simple(vec![
-                            SmallStatement::Del(vec!["qux".to_string()])
-                        ])
+                        Statement::Del(vec!["qux".to_string()])
                     ]
                 )
             )
@@ -431,9 +525,7 @@ mod tests {
                                       (
                                           "foo".to_string(),
                                           vec![
-                                              Statement::Simple(vec![
-                                                  SmallStatement::Del(vec!["bar".to_string()])
-                                              ])
+                                              Statement::Del(vec!["bar".to_string()])
                                           ]
                                       ),
                                   ],
@@ -462,9 +554,7 @@ mod tests {
                                       (
                                           "foo".to_string(),
                                           vec![
-                                              Statement::Simple(vec![
-                                                  SmallStatement::Del(vec!["bar".to_string()])
-                                              ])
+                                              Statement::Del(vec!["bar".to_string()])
                                           ]
                                       ),
                                   ],
@@ -476,9 +566,7 @@ mod tests {
                 ],
                 Some(
                     vec![
-                        Statement::Simple(vec![
-                            SmallStatement::Del(vec!["qux".to_string()])
-                        ])
+                        Statement::Del(vec!["qux".to_string()])
                     ]
                 )
             )
@@ -499,17 +587,13 @@ mod tests {
                                       (
                                           "foo".to_string(),
                                           vec![
-                                              Statement::Simple(vec![
-                                                  SmallStatement::Del(vec!["bar".to_string()])
-                                              ])
+                                              Statement::Del(vec!["bar".to_string()])
                                           ]
                                       ),
                                   ],
                                   Some(
                                       vec![
-                                          Statement::Simple(vec![
-                                              SmallStatement::Del(vec!["qux".to_string()])
-                                          ])
+                                          Statement::Del(vec!["qux".to_string()])
                                       ]
                                   )
                                 )
@@ -528,9 +612,7 @@ mod tests {
             CompoundStatement::While(
                 "foo".to_string(),
                 vec![
-                    Statement::Simple(vec![
-                        SmallStatement::Del(vec!["bar".to_string()])
-                    ])
+                    Statement::Del(vec!["bar".to_string()])
                 ],
                 None
             )
@@ -543,15 +625,11 @@ mod tests {
             CompoundStatement::While(
                 "foo".to_string(),
                 vec![
-                    Statement::Simple(vec![
-                        SmallStatement::Del(vec!["bar".to_string()])
-                    ])
+                    Statement::Del(vec!["bar".to_string()])
                 ],
                 Some(
                     vec![
-                        Statement::Simple(vec![
-                            SmallStatement::Del(vec!["qux".to_string()])
-                        ])
+                        Statement::Del(vec!["qux".to_string()])
                     ]
                 )
             )
@@ -565,9 +643,7 @@ mod tests {
                 vec!["foo".to_string()],
                 vec!["bar".to_string()],
                 vec![
-                    Statement::Simple(vec![
-                        SmallStatement::Del(vec!["baz".to_string()])
-                    ])
+                    Statement::Del(vec!["baz".to_string()])
                 ],
                 None
             )
@@ -581,15 +657,11 @@ mod tests {
                 vec!["foo".to_string()],
                 vec!["bar".to_string()],
                 vec![
-                    Statement::Simple(vec![
-                        SmallStatement::Del(vec!["baz".to_string()])
-                    ])
+                    Statement::Del(vec!["baz".to_string()])
                 ],
                 Some(
                     vec![
-                        Statement::Simple(vec![
-                            SmallStatement::Del(vec!["qux".to_string()])
-                        ])
+                        Statement::Del(vec!["qux".to_string()])
                     ]
                 )
             )
@@ -600,17 +672,17 @@ mod tests {
     fn test_raise() {
         use expressions::Atom;
         assert_eq!(small_stmt(CS("raise")), Ok((CS(""),
-            SmallStatement::Raise
+            Statement::Raise
         )));
 
         assert_eq!(small_stmt(CS("raise exc")), Ok((CS(""),
-            SmallStatement::RaiseExc(
+            Statement::RaiseExc(
                 Expression::Atom(Atom::Name("exc".to_string())),
             )
         )));
 
         assert_eq!(small_stmt(CS("raise exc from exc2")), Ok((CS(""),
-            SmallStatement::RaiseExcFrom(
+            Statement::RaiseExcFrom(
                 Expression::Atom(Atom::Name("exc".to_string())),
                 Expression::Atom(Atom::Name("exc2".to_string())),
             )

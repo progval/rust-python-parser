@@ -18,10 +18,10 @@ use expressions::*;
 use statements::*;
 
 // single_input: NEWLINE | simple_stmt | compound_stmt NEWLINE
-named!(pub parse_single_input <CompleteStr, Option<Statement>>,
+named!(pub parse_single_input <CompleteStr, Vec<Statement>>,
   alt!(
-    newline => { |_| None }
-  | call!(statement, 0, 0) => { |stmt| Some(stmt) }
+    newline => { |_| Vec::new() }
+  | call!(statement, 0, 0) => { |stmts| stmts }
   )
 );
 
@@ -42,9 +42,9 @@ mod tests {
     #[test]
     fn foo() {
         assert_eq!(newline(CS("\n")), Ok((CS(""), ())));
-        assert_eq!(parse_single_input(CS("del foo")), Ok((CS(""), Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()])])))));
-        assert_eq!(parse_single_input(CS("del foo bar")), Ok((CS(""), Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string(), "bar".to_string()])])))));
-        assert_eq!(parse_single_input(CS("del foo; del bar")), Ok((CS(""), Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()]), SmallStatement::Del(vec!["bar".to_string()])])))));
-        assert_eq!(parse_single_input(CS("del foo ;del bar")), Ok((CS(""), Some(Statement::Simple(vec![SmallStatement::Del(vec!["foo".to_string()]), SmallStatement::Del(vec!["bar".to_string()])])))));
+        assert_eq!(parse_single_input(CS("del foo")), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_eq!(parse_single_input(CS("del foo bar")), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string(), "bar".to_string()])])));
+        assert_eq!(parse_single_input(CS("del foo; del bar")), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["bar".to_string()])])));
+        assert_eq!(parse_single_input(CS("del foo ;del bar")), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["bar".to_string()])])));
     }
 }

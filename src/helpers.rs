@@ -22,6 +22,13 @@ macro_rules! ws2 (
   )
 );
 
+named!(pub space_sep<CompleteStr, ()>,
+  map!(many1!(one_of!(" \t\n")), |_| ())
+);
+
+named!(pub space_sep2<CompleteStr, ()>,
+  map!(many1!(one_of!(" \t")), |_| ())
+);
 
 pub type Name = String;
 

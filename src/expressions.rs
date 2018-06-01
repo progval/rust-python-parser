@@ -11,7 +11,7 @@ pub enum ArgumentError {
 }
 
 impl ArgumentError {
-    fn to_string(self) -> &'static str {
+    pub fn to_string(self) -> &'static str {
         match self {
             ArgumentError::KeywordExpression => "Keyword cannot be an expression.",
             ArgumentError::PositionalAfterKeyword => "Positional argument after keyword argument or **kwargs.",
@@ -43,13 +43,17 @@ impl From<ArgumentError> for u32 {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Atom {
-    // TODO
+    Ellipsis,
+    None,
+    True,
+    False,
     Name(Name),
     Int(i64),
     Complex { real: f64, imaginary: f64 },
     Float(f64),
     String(String),
     Bytes(Vec<u8>),
+    Generator(Box<Expression>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -121,6 +125,12 @@ pub enum Bop {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum ComprehensionChunk {
+    If { cond: Expression },
+    For { async: bool, item: Vec<Expression>, iterator: Expression },
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Atom(Atom),
     Call(Box<Expression>, Arglist),
@@ -133,6 +143,11 @@ pub enum Expression {
     Bop(Bop, Box<Expression>, Box<Expression>),
     /// 1 if 2 else 3
     Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
+    Yield(Vec<Expression>),
+    YieldFrom(Box<Expression>),
+    Star(Box<Expression>),
+    Generator(Box<Expression>, Vec<ComprehensionChunk>),
+    CommaSeparated(Vec<Expression>),
 }
 
 /*********************************************************************
@@ -144,7 +159,18 @@ named!(pub test<CompleteStr, Box<Expression>>,
   alt!(
     do_parse!(
       left: or_test >>
-      right: opt!(tuple!(delimited!(tag!(" if "), or_test, tag!(" else ")), test)) >> (
+      right: opt!(do_parse!(
+        space_sep2 >>
+        tag!("if") >>
+        space_sep2 >>
+        cond: or_test >>
+        space_sep2 >>
+        tag!("else") >>
+        space_sep2 >>
+        right: test >> (
+          (cond, right)
+        )
+      )) >> (
         match right {
           None => left,
           Some((cond, right)) => Box::new(Expression::Ternary(left, cond, right)),
@@ -156,7 +182,12 @@ named!(pub test<CompleteStr, Box<Expression>>,
 );
 
 // test_nocond: or_test | lambdef_nocond
-// TODO
+named!(test_nocond<CompleteStr, Box<Expression>>,
+  alt!(
+    or_test
+    // TODO
+  )
+);
 
 // lambdef: 'lambda' [varargslist] ':' test
 // TODO
@@ -191,18 +222,18 @@ macro_rules! bop {
 
 // or_test: and_test ('or' and_test)*
 bop!(or_test, and_test, alt!(
-  tag!("or") => { |_| Bop::Or }
+  tag!("or ") => { |_| Bop::Or }
 ));
 
 // and_test: not_test ('and' not_test)*
 bop!(and_test, not_test, alt!(
-  tag!("and") => { |_| Bop::And }
+  tag!("and ") => { |_| Bop::And }
 ));
 
 // not_test: 'not' not_test | comparison
 named!(not_test<CompleteStr, Box<Expression>>,
   alt!(
-    preceded!(ws2!(tag!("not")), comparison) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
+    preceded!(tag!("not "), comparison) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
   | comparison
   )
 );
@@ -217,12 +248,15 @@ bop!(comparison, expr, alt!(
 | tag!(">=") => { |_| Bop::Geq }
 | tag!("!=") => { |_| Bop::Neq }
 | tag!("in") => { |_| Bop::In }
-| ws2!(tuple!(tag!("not"), tag!("in"))) => { |_| Bop::NotIn }
-| tag!("is") => { |_| Bop::Is }
-| ws2!(tuple!(tag!("is"), tag!("not"))) => { |_| Bop::IsNot }
+| tuple!(tag!("not"), space_sep2, tag!("in"), space_sep2) => { |_| Bop::NotIn }
+| tuple!(tag!("is"), space_sep2) => { |_| Bop::Is }
+| tuple!(tag!("is"), space_sep2, tag!("not"), space_sep2) => { |_| Bop::IsNot }
 ));
 
 // star_expr: '*' expr
+named!(star_expr<CompleteStr, Box<Expression>>,
+  map!(preceded!(ws2!(char!('*')), expr), |e| Box::new(Expression::Star(e)))
+);
 
 // expr: xor_expr ('|' xor_expr)*
 bop!(expr, xor_expr, alt!(
@@ -315,18 +349,39 @@ named!(atom_expr<CompleteStr, Box<Expression>>,
 use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
 named!(atom<CompleteStr, Atom>,
   alt!(
-    name => { |n| Atom::Name(n) }
-  | delimited!(
+    tag!("...") => { |_| Atom::Ellipsis }
+  | tag!("None") => { |_| Atom::None }
+  | tag!("True") => { |_| Atom::True }
+  | tag!("False") => { |_| Atom::False }
+  | name => { |n| Atom::Name(n) }
+  | separated_nonempty_list!(space_sep2, delimited!(
       char!('"'),
       escaped_transform!(call!(nom::alpha), '\\', nom::anychar),
       char!('"')
-    ) => { |s| Atom::String(s) }
-  )
+    )) => { |strings: Vec<String>|
+      Atom::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
+    }
+  | ws2!(delimited!(char!('('), ws!(alt!(yield_expr | testlist_comp)), char!(')'))) => { |e| Atom::Generator(e) }
   // TODO
+  )
 );
 
 // testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
-// TODO
+named!(testlist_comp<CompleteStr, Box<Expression>>,
+  do_parse!(
+    first: alt!(test | star_expr) >>
+    r: alt!(
+      comp_for => { |comp| Box::new(Expression::Generator(first, comp)) }
+    | preceded!(char!(','), separated_list!(char!(','), alt!(test|star_expr))) => { |v: Vec<Box<Expression>>| {
+        let mut v2 = vec![*first];
+        v2.extend(v.into_iter().map(|e| *e));
+        Box::new(Expression::CommaSeparated(v2))
+      }}
+    ) >> (
+      r
+    )
+  )
+);
 
 // subscript: test | [test] ':' [test] [sliceop]
 named!(subscript<CompleteStr, Subscript>,
@@ -355,7 +410,9 @@ named_args!(subscript_trail(first: Option<Expression>) <CompleteStr, Subscript>,
 );
 
 // exprlist: (expr|star_expr) (',' (expr|star_expr))* [',']
-// TODO
+named!(exprlist<CompleteStr, Vec<Expression>>,
+  separated_nonempty_list!(ws2!(char!(',')), map!(alt!(expr|star_expr), |e| *e))
+);
 
 // testlist: test (',' test)* [',']
 named!(pub testlist<CompleteStr, Vec<Expression>>,
@@ -369,9 +426,6 @@ named!(pub possibly_empty_testlist<CompleteStr, Vec<Expression>>,
 //                    (comp_for | (',' (test ':' test | '**' expr))* [','])) |
 //                   ((test | star_expr)
 //                    (comp_for | (',' (test | star_expr))* [','])) )
-// TODO
-
-// classdef: 'class' NAME ['(' [arglist] ')'] ':' suite
 // TODO
 
 /*********************************************************************
@@ -405,7 +459,7 @@ fn build_arglist(input: CompleteStr, args: Vec<RawArgument>) -> IResult<Complete
     loop {
         match last_arg {
             Some(RawArgument::Keyword(Expression::Atom(Atom::Name(name)), arg)) => keyword_args.push(Argument::Normal((name, arg))),
-            Some(RawArgument::Keyword(_, arg)) => return fail(ArgumentError::KeywordExpression.into()),
+            Some(RawArgument::Keyword(_, _arg)) => return fail(ArgumentError::KeywordExpression.into()),
             Some(RawArgument::Kwargs(kwargs)) => keyword_args.push(Argument::Star(kwargs)),
             Some(RawArgument::Positional(_)) => return fail(ArgumentError::PositionalAfterKeyword.into()),
             Some(RawArgument::Starargs(_)) => return fail(ArgumentError::StarargsAfterKeyword.into()),
@@ -420,14 +474,20 @@ named!(arglist<CompleteStr, Arglist>,
   do_parse!(
     args: separated_list!(ws!(char!(',')),
       alt!(
-        tuple!(test, opt!(preceded!(char!('='), test))) => { |(test1, test2): (Box<_>, Option<Box<_>>)| {
-          match test2 {
-              None => RawArgument::Positional(*test1),
-              Some(test2) => RawArgument::Keyword(*test1, *test2),
-          }
-        }}
-      | preceded!(tag!("**"), test) => { |kwargs: Box<_>| RawArgument::Kwargs(*kwargs) }
+        preceded!(tag!("**"), test) => { |kwargs: Box<_>| RawArgument::Kwargs(*kwargs) }
       | preceded!(char!('*'), test) => { |args: Box<_>| RawArgument::Starargs(*args) }
+      | do_parse!(
+          test1: test >>
+          next: opt!(alt!(
+            preceded!(char!('='), test) => { |test2: Box<_>| RawArgument::Keyword(*test1.clone(), *test2) } // FIXME: do not clone
+          | comp_for => { |v| RawArgument::Positional(Expression::Generator(test1.clone(), v)) } // FIXME: do not clone
+          )) >> (
+            match next {
+                Some(e) => e,
+                None => RawArgument::Positional(*test1)
+            }
+          )
+        )
       )
     ) >>
     args2: call!(build_arglist, args) >> (
@@ -441,19 +501,58 @@ named!(arglist<CompleteStr, Arglist>,
  *********************************************************************/
 
 // comp_iter: comp_for | comp_if
-// TODO
+named_args!(comp_iter(acc: Vec<ComprehensionChunk>) <CompleteStr, Vec<ComprehensionChunk>>,
+  alt!(
+    call!(comp_for2, acc.clone()) // FIXME: do not clone
+  | call!(comp_if, acc)
+  )
+);
 
 // comp_for: [ASYNC] 'for' exprlist 'in' or_test [comp_iter]
-// TODO
+named!(comp_for<CompleteStr, Vec<ComprehensionChunk>>,
+  call!(comp_for2, Vec::new())
+);
+named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <CompleteStr, Vec<ComprehensionChunk>>,
+  do_parse!(
+    async: map!(opt!(terminated!(tag!("async"), space_sep2)), |o| o.is_some()) >>
+    tag!("for") >>
+    space_sep2 >>
+    item: exprlist >>
+    space_sep2 >>
+    tag!("in") >>
+    iterator: map!(or_test, |e| *e) >>
+    space_sep2 >>
+    r: call!(comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::For { async, item, iterator }); acc }) >> (
+      r
+    )
+  )
+);
 
 // comp_if: 'if' test_nocond [comp_iter]
-// TODO
+named_args!(comp_if(acc: Vec<ComprehensionChunk>) <CompleteStr, Vec<ComprehensionChunk>>,
+  do_parse!(
+    tag!("if") >>
+    space_sep2 >>
+    cond: map!(test_nocond, |e| *e) >>
+    space_sep2 >>
+    r: call!(comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::If { cond }); acc }) >> (
+      r
+    )
+  )
+);
+
 
 // yield_expr: 'yield' [yield_arg]
-// TODO
-
 // yield_arg: 'from' test | testlist
-// TODO
+named!(pub yield_expr<CompleteStr, Box<Expression>>,
+  preceded!(
+    tuple!(tag!("yield"), space_sep2),
+    alt!(
+      preceded!(tuple!(tag!("from"), space_sep2), test) => { |e| Box::new(Expression::YieldFrom(e)) }
+    | testlist => { |e| Box::new(Expression::Yield(e)) }
+    )
+  )
+);
 
 /*********************************************************************
  * Unit tests
@@ -468,6 +567,7 @@ mod tests {
     fn test_atom() {
         assert_eq!(atom(CS("foo ")), Ok((CS(" "), Atom::Name("foo".to_string()))));
         assert_eq!(atom(CS(r#""foo" "#)), Ok((CS(" "), Atom::String("foo".to_string()))));
+        assert_eq!(atom(CS(r#""foo" "bar""#)), Ok((CS(""), Atom::String("foobar".to_string()))));
         assert_eq!(atom(CS(r#""fo\"o" "#)), Ok((CS(" "), Atom::String("fo\"o".to_string()))));
         assert_eq!(atom(CS(r#""fo"o" "#)), Ok((CS(r#"o" "#), Atom::String("fo".to_string()))));
     }
