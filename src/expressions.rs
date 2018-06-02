@@ -309,7 +309,7 @@ bop!(comparison, Self::expr, alt!(
 ));
 
 // star_expr: '*' expr
-named!(star_expr<CompleteStr, Box<Expression>>,
+named!(pub star_expr<CompleteStr, Box<Expression>>,
  do_parse!(char!('*') >> spaces!() >> e: call!(Self::expr) >> (Box::new(Expression::Star(e))))
 );
 

@@ -6,7 +6,7 @@ use helpers::*;
 use expressions::{Expression, ExpressionParser, Arglist};
 use functions::{decorated, Decorator, TypedArgsList};
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Import {
     /// `from x import y`
     ImportFrom {
@@ -24,6 +24,23 @@ pub enum Import {
     Import { names: Vec<(Vec<Name>, Option<Name>)> },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum AugAssignOp {
+    Add,
+    Sub,
+    Mult,
+    MatMult,
+    Div,
+    Mod,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Lshift,
+    Rshift,
+    Power,
+    Floordiv,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Pass,
@@ -39,7 +56,12 @@ pub enum Statement {
     Assert(Expression, Option<Expression>),
     Import(Import),
     Expressions(Vec<Expression>),
-    // TODO
+    // `lhs = rhs1 = rhs2` -> `lhs, vec![rhs1, rhs2]`
+    Assignment(Vec<Expression>, Vec<Vec<Expression>>),
+    // `lhs: type = rhs` -> `lhs, type, rhs`
+    TypedAssignment(Vec<Expression>, Expression, Vec<Expression>),
+    // `lhs += rhs` -> `lhs, AugAssignOp::Add, rhs`
+    AugmentedAssignment(Vec<Expression>, AugAssignOp, Vec<Expression>),
 
     Compound(Box<CompoundStatement>),
 }
@@ -64,7 +86,6 @@ pub struct Classdef {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompoundStatement {
-    // TODO
     If(Vec<(Test, Vec<Statement>)>, Option<Vec<Statement>>),
     For { async: bool, item: Vec<Expression>, iterator: Vec<Expression>, for_block: Vec<Statement>, else_block: Option<Vec<Statement>> },
     While(Test, Vec<Statement>, Option<Vec<Statement>>),
@@ -104,14 +125,14 @@ named_args!(simple_stmt(indent: usize) <CompleteStr, Vec<Statement>>,
 //             import_stmt | global_stmt | nonlocal_stmt | assert_stmt)
 named!(small_stmt<CompleteStr, Statement>,
   alt!(
-    del_stmt => { |atoms| Statement::Del(atoms) }
+    expr_stmt
+  | del_stmt => { |atoms| Statement::Del(atoms) }
   | pass_stmt
   | flow_stmt
   | import_stmt
   | global_stmt
   | nonlocal_stmt
   | assert_stmt
-    // TODO
   )
 );
 
@@ -121,17 +142,79 @@ named!(small_stmt<CompleteStr, Statement>,
 
 // expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
 //                     ('=' (yield_expr|testlist_star_expr))*)
-// TODO
-
 // annassign: ':' test ['=' test]
-// TODO
+named!(expr_stmt<CompleteStr, Statement>,
+  do_parse!(
+    lhs: testlist_star_expr >>
+    r: ws2!(alt!(
+      // Case 1: foo = bar
+      do_parse!(
+        rhs: many1!(ws2!(preceded!(char!('='), alt!(
+          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e:Box<_>| vec![*e] }
+        | testlist_star_expr
+        )))) >> (
+          Statement::Assignment(lhs.clone(), rhs)
+        )
+      )
+
+      // Case 2: foo: bar = baz
+    | do_parse!(
+        char!(':') >>
+        typed: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
+        char!('=') >>
+        rhs: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >> (
+          Statement::TypedAssignment(lhs.clone(), *typed, vec![*rhs])
+        )
+      )
+
+      // Case 3: Foo += bar (and other operators)
+    | do_parse!(
+        op: augassign >>
+        rhs: alt!(
+          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e:Box<_>| vec![*e] }
+        | call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist)
+        ) >> (
+          Statement::AugmentedAssignment(lhs, op, rhs)
+        )
+      )
+    )) >>
+    (r)
+  )
+);
 
 // testlist_star_expr: (test|star_expr) (',' (test|star_expr))* [',']
-// TODO
+named!(testlist_star_expr<CompleteStr, Vec<Expression>>,
+  terminated!(
+    separated_nonempty_list!(
+      ws2!(char!(',')),
+      map!(alt!(
+        call!(ExpressionParser::<NewlinesAreNotSpaces>::test)
+      | call!(ExpressionParser::<NewlinesAreNotSpaces>::star_expr)
+      ), |e| *e)
+    ),
+    opt!(ws2!(char!(',')))
+  )
+);
 
 // augassign: ('+=' | '-=' | '*=' | '@=' | '/=' | '%=' | '&=' | '|=' | '^=' |
 //            '<<=' | '>>=' | '**=' | '//=')
-// TODO
+named!(augassign<CompleteStr, AugAssignOp>,
+  ws2!(alt!(
+    tag!("+=") => { |_| AugAssignOp::Add }
+  | tag!("-=") => { |_| AugAssignOp::Sub }
+  | tag!("*=") => { |_| AugAssignOp::Mult }
+  | tag!("@=") => { |_| AugAssignOp::MatMult }
+  | tag!("/=") => { |_| AugAssignOp::Div }
+  | tag!("%=") => { |_| AugAssignOp::Mod }
+  | tag!("&=") => { |_| AugAssignOp::BitAnd }
+  | tag!("|=") => { |_| AugAssignOp::BitOr }
+  | tag!("^=") => { |_| AugAssignOp::BitXor }
+  | tag!("<<=") => { |_| AugAssignOp::Lshift }
+  | tag!(">>=") => { |_| AugAssignOp::Rshift }
+  | tag!("**=") => { |_| AugAssignOp::Power }
+  | tag!("//=") => { |_| AugAssignOp::Floordiv }
+  ))
+);
 
 /*********************************************************************
  * Small statements
@@ -735,6 +818,93 @@ mod tests {
             Statement::RaiseExcFrom(
                 Expression::Atom(Atom::Name("exc".to_string())),
                 Expression::Atom(Atom::Name("exc2".to_string())),
+            )
+        )));
+    }
+
+    #[test]
+    fn test_assign() {
+        use expressions::Atom;
+
+        assert_eq!(small_stmt(CS("foo = bar")), Ok((CS(""),
+            Statement::Assignment(
+                vec![
+                    Expression::Atom(Atom::Name("foo".to_string())),
+                ],
+                vec![
+                    vec![
+                        Expression::Atom(Atom::Name("bar".to_string())),
+                    ],
+                ],
+            )
+        )));
+
+        assert_eq!(small_stmt(CS("foo = bar = baz")), Ok((CS(""),
+            Statement::Assignment(
+                vec![
+                    Expression::Atom(Atom::Name("foo".to_string())),
+                ],
+                vec![
+                    vec![
+                        Expression::Atom(Atom::Name("bar".to_string())),
+                    ],
+                    vec![
+                        Expression::Atom(Atom::Name("baz".to_string())),
+                    ],
+                ],
+            )
+        )));
+    }
+
+    #[test]
+    fn test_augassign() {
+        use expressions::Atom;
+
+        assert_eq!(small_stmt(CS("foo:bar = baz")), Ok((CS(""),
+            Statement::TypedAssignment(
+                vec![
+                    Expression::Atom(Atom::Name("foo".to_string())),
+                ],
+                Expression::Atom(Atom::Name("bar".to_string())),
+                vec![
+                    Expression::Atom(Atom::Name("baz".to_string())),
+                ],
+            )
+        )));
+    }
+
+    #[test]
+    fn test_unpack_assign() {
+        use expressions::Atom;
+
+        assert_eq!(small_stmt(CS("foo, bar = baz, qux")), Ok((CS(""),
+            Statement::Assignment(
+                vec![
+                    Expression::Atom(Atom::Name("foo".to_string())),
+                    Expression::Atom(Atom::Name("bar".to_string())),
+                ],
+                vec![
+                    vec![
+                        Expression::Atom(Atom::Name("baz".to_string())),
+                        Expression::Atom(Atom::Name("qux".to_string())),
+                    ],
+                ],
+            )
+        )));
+
+        assert_eq!(small_stmt(CS("foo = bar = baz")), Ok((CS(""),
+            Statement::Assignment(
+                vec![
+                    Expression::Atom(Atom::Name("foo".to_string())),
+                ],
+                vec![
+                    vec![
+                        Expression::Atom(Atom::Name("bar".to_string())),
+                    ],
+                    vec![
+                        Expression::Atom(Atom::Name("baz".to_string())),
+                    ],
+                ],
             )
         )));
     }
