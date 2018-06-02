@@ -193,12 +193,19 @@ struct ParamlistParser<IIT: IsItTyped> {
 impl<IIT: IsItTyped> ParamlistParser<IIT> {
     named!(parse<CompleteStr, IIT::List>, ws!(
       alt!(
+      /***************************
+       * Case 1: only **kwargs
+       ***************************/
         do_parse!( // Parse this part: '**' tfpdef [',']
           tag!("**") >>
           star_kwargs: call!(IIT::fpdef) >> (
             IIT::make_list(Vec::new(), None, Vec::new(), Some(star_kwargs))
           )
         )
+
+      /***************************
+       * Case 2: Starts with *args
+       ***************************/
       | do_parse!( // Parse this part: '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
           tag!("*") >>
           star_args: opt!(call!(IIT::fpdef)) >>
@@ -207,25 +214,46 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
             IIT::make_list(Vec::new(), Some(star_args), keyword_args, star_kwargs.unwrap_or(None))
           )
         )
+
+      /***************************
+       * Case 3: Starts with a positional argument
+       ***************************/
       | do_parse!(
-          // First, parse this: tfpdef ['=' test] (',' tfpdef ['=' test])*
+
+          /************
+           * Parse positional arguments:
+           * tfpdef ['=' test] (',' tfpdef ['=' test])*
+           */
           positional_args: separated_nonempty_list!(char!(','), call!(IIT::fpdef_with_default)) >>
-          r: opt!(ws!(preceded!(char!(','), opt!( // FIXME: wtf, why is this ws! needed? And why doesn't it work if I swap it with the opt! before it?
+          r: opt!(ws!(preceded!(char!(','), opt!( // FIXME: ws! is needed here because it does not traverse opt!
+
             alt!(
-              // Parse this: '**' tfpdef [',']
+              /************
+               * Case 3a: positional arguments are immediately followed by **kwargs
+               * Parse this: '**' tfpdef [',']
+               */
               preceded!(tag!("**"), call!(IIT::fpdef)) => {|kwargs|
                 IIT::make_list(positional_args.clone(), None, Vec::new(), Some(kwargs)) // FIXME: do not clone
               }
-            | do_parse!( // Parse this: '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
+
+              /************
+               * Case 3b: positional arguments are followed by * or *args
+               * Parse this: '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
+               */
+            | do_parse!(
                 char!('*') >>
                 star_args: opt!(call!(IIT::fpdef)) >>
                 keyword_args: opt!(preceded!(char!(','), separated_nonempty_list!(char!(','), call!(IIT::fpdef_with_default)))) >>
-                star_kwargs: opt!(ws!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: wtf, why is this ws! needed? And why doesn't it work if I swap it with the opt! before it?
+                star_kwargs: opt!(ws!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: ws! is needed here because it does not traverse opt!
                   IIT::make_list(positional_args.clone(), Some(star_args), keyword_args.unwrap_or(Vec::new()), star_kwargs.unwrap_or(None)) // FIXME: do not clone
                 )
               )
+
             )
           )))) >> (
+            /************
+             * Case 3c: positional arguments are not followed by anything
+             */
             match r {
                 Some(Some(r)) => r,
                 Some(None) |
