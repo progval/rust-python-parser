@@ -4,7 +4,7 @@ use nom::types::CompleteStr;
 use nom::IResult;
 
 use statements::{ImportParser, block};
-use statements::{CompoundStatement, Funcdef};
+use statements::{CompoundStatement, Funcdef, Classdef};
 use expressions::{Expression, ExpressionParser, Arglist};
 use helpers::{name, Name, newline, space_sep2};
 use helpers::{NewlinesAreSpaces, NewlinesAreNotSpaces};
@@ -43,8 +43,8 @@ named_args!(pub decorated(indent: usize) <CompleteStr, CompoundStatement>,
   do_parse!(
     decorators: call!(decorators, indent) >>
     s: alt!(
-        call!(funcdef, indent, decorators)
-      // TODO
+        call!(funcdef, indent, decorators.clone()) // FIXME: do not clone
+      | call!(classdef, indent, decorators)
     ) >> (s)
   )
 );
@@ -68,6 +68,23 @@ named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <CompleteStr, Com
     code: call!(block, indent) >> (
       CompoundStatement::Funcdef(Funcdef {
           async: async.is_some(), decorators, name, parameters, return_type: return_type.map(|t| *t), code
+      })
+    )
+  )
+);
+
+// classdef: 'class' NAME ['(' [arglist] ')'] ':' suite
+named_args!(classdef(indent: usize, decorators: Vec<Decorator>) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    count!(char!(' '), indent) >>
+    tag!("class") >>
+    space_sep2 >>
+    name: name >>
+    parameters: ws2!(delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')'))) >>
+    ws2!(char!(':')) >> 
+    code: call!(block, indent) >> (
+      CompoundStatement::Classdef(Classdef {
+          decorators, name, parameters, code
       })
     )
   )

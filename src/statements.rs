@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use nom::types::CompleteStr;
 
 use helpers::*;
-use expressions::{Expression, ExpressionParser};
+use expressions::{Expression, ExpressionParser, Arglist};
 use functions::{decorated, Decorator, TypedArgsList};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,12 +55,21 @@ pub struct Funcdef {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Classdef {
+    pub decorators: Vec<Decorator>,
+    pub name: String,
+    pub parameters: Arglist,
+    pub code: Vec<Statement>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum CompoundStatement {
     // TODO
     If(Vec<(Test, Vec<Statement>)>, Option<Vec<Statement>>),
     For { async: bool, item: Vec<Expression>, iterator: Vec<Expression>, for_block: Vec<Statement>, else_block: Option<Vec<Statement>> },
     While(Test, Vec<Statement>, Option<Vec<Statement>>),
     Funcdef(Funcdef),
+    Classdef(Classdef),
 }
 
 
@@ -432,9 +441,6 @@ named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 // TODO
 
 // except_clause: 'except' [test ['as' NAME]]
-// TODO
-
-// classdef: 'class' NAME ['(' [arglist] ')'] ':' suite
 // TODO
 
 /*********************************************************************
