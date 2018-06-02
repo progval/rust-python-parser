@@ -35,27 +35,27 @@ use helpers::NewlinesAreSpaces;
  *********************************************************************/
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum StarParams {
+pub enum StarParams<T> {
     /// No single star
     No,
     /// `*` alone, with no name
     Anonymous,
-    /// *args`
-    Named(Name),
+    /// *args` or `*args:type`
+    Named(T),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypedArgsList {
     positional_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
-    star_args: StarParams,
+    star_args: StarParams<(Name, Option<Expression>)>,
     keyword_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
-    star_kwargs: Option<Name>,
+    star_kwargs: Option<(Name, Option<Expression>)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct UntypedArgsList {
     positional_args: Vec<(Name, Option<Expression>)>,
-    star_args: StarParams,
+    star_args: StarParams<Name>,
     keyword_args: Vec<(Name, Option<Expression>)>,
     star_kwargs: Option<Name>,
 }
@@ -78,7 +78,7 @@ trait IsItTyped {
         ))
     }
 
-    fn make_list(positional_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_args: Option<Option<Name>>, keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_kwargs: Option<Name>) -> Self::List;
+    fn make_list(positional_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_args: Option<Option<Self::Return>>, keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_kwargs: Option<Self::Return>) -> Self::List;
 }
 
 // For typed parameter lists
@@ -93,21 +93,21 @@ impl IsItTyped for Typed {
       ))
     );
 
-    fn make_list(positional_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_args: Option<Option<Name>>, keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_kwargs: Option<Name>) -> Self::List {
+    fn make_list(positional_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_args: Option<Option<Self::Return>>, keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_kwargs: Option<Self::Return>) -> Self::List {
         let deref_option = |o: Option<Box<_>>| o.map(|v| *v);
         TypedArgsList {
             positional_args: positional_args.into_iter().map(|((name, typed), value)|
                 (name, deref_option(typed), deref_option(value))
             ).collect(),
             star_args: match star_args {
-                Some(Some(name)) => StarParams::Named(name),
+                Some(Some((name, typed))) => StarParams::Named((name, deref_option(typed))),
                 Some(None) => StarParams::Anonymous,
                 None => StarParams::No,
             },
             keyword_args: keyword_args.into_iter().map(|((name, typed), value)|
                 (name, deref_option(typed), deref_option(value))
             ).collect(),
-            star_kwargs
+            star_kwargs: star_kwargs.map(|(name, typed)| (name, deref_option(typed)))
         }
     }
 }
@@ -122,7 +122,7 @@ impl IsItTyped for Untyped {
       tuple!(name)
     );
 
-    fn make_list(positional_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_args: Option<Option<Name>>, keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_kwargs: Option<Name>) -> Self::List {
+    fn make_list(positional_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_args: Option<Option<Self::Return>>, keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>, star_kwargs: Option<Self::Return>) -> Self::List {
         let deref_option = |o: Option<Box<_>>| o.map(|v| *v);
         UntypedArgsList {
             positional_args: positional_args.into_iter().map(|(name, value)|
@@ -168,15 +168,15 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
       alt!(
         do_parse!( // Parse this part: '**' tfpdef [',']
           tag!("**") >>
-          star_kwargs: call!(Untyped::fpdef) >> (
+          star_kwargs: call!(IIT::fpdef) >> (
             IIT::make_list(Vec::new(), None, Vec::new(), Some(star_kwargs))
           )
         )
       | do_parse!( // Parse this part: '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
           tag!("*") >>
-          star_args: opt!(call!(Untyped::fpdef)) >>
+          star_args: opt!(call!(IIT::fpdef)) >>
           keyword_args: separated_list!(char!(','), call!(IIT::fpdef_with_default)) >>
-          star_kwargs: opt!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(Untyped::fpdef))))) >> (
+          star_kwargs: opt!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef))))) >> (
             IIT::make_list(Vec::new(), Some(star_args), keyword_args, star_kwargs.unwrap_or(None))
           )
         )
@@ -186,14 +186,14 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
           r: opt!(ws!(preceded!(char!(','), opt!( // FIXME: wtf, why is this ws! needed? And why doesn't it work if I swap it with the opt! before it?
             alt!(
               // Parse this: '**' tfpdef [',']
-              preceded!(tag!("**"), call!(Untyped::fpdef)) => {|kwargs|
+              preceded!(tag!("**"), call!(IIT::fpdef)) => {|kwargs|
                 IIT::make_list(positional_args.clone(), None, Vec::new(), Some(kwargs)) // FIXME: do not clone
               }
             | do_parse!( // Parse this: '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
                 char!('*') >>
-                star_args: opt!(call!(Untyped::fpdef)) >>
+                star_args: opt!(call!(IIT::fpdef)) >>
                 keyword_args: opt!(preceded!(char!(','), separated_nonempty_list!(char!(','), call!(IIT::fpdef_with_default)))) >>
-                star_kwargs: opt!(ws!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(Untyped::fpdef)))))) >> ( // FIXME: wtf, why is this ws! needed? And why doesn't it work if I swap it with the opt! before it?
+                star_kwargs: opt!(ws!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: wtf, why is this ws! needed? And why doesn't it work if I swap it with the opt! before it?
                   IIT::make_list(positional_args.clone(), Some(star_args), keyword_args.unwrap_or(Vec::new()), star_kwargs.unwrap_or(None)) // FIXME: do not clone
                 )
               )
@@ -396,7 +396,7 @@ mod tests {
                 star_args: StarParams::No,
                 keyword_args: vec![
                 ],
-                star_kwargs: Some("kwargs".to_string()),
+                star_kwargs: Some(("kwargs".to_string(), None)),
             }
         )));
 
@@ -417,10 +417,10 @@ mod tests {
                 positional_args: vec![
                     ("foo".to_string(), None, None),
                 ],
-                star_args: StarParams::Named("args".to_string()),
+                star_args: StarParams::Named(("args".to_string(), None)),
                 keyword_args: vec![
                 ],
-                star_kwargs: Some("kwargs".to_string()),
+                star_kwargs: Some(("kwargs".to_string(), None)),
             }
         )));
 
@@ -445,7 +445,7 @@ mod tests {
                 keyword_args: vec![
                     ("bar".to_string(), None, None),
                 ],
-                star_kwargs: Some("kwargs".to_string()),
+                star_kwargs: Some(("kwargs".to_string(), None)),
             }
         )));
 
