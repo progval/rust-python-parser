@@ -12,6 +12,7 @@ mod helpers;
 mod expressions;
 #[macro_use]
 mod statements;
+mod functions;
 
 use helpers::*;
 use statements::*;
