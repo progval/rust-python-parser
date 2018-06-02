@@ -59,6 +59,10 @@ pub enum Atom {
     String(String),
     Bytes(Vec<u8>),
     Generator(Box<Expression>),
+    DictLiteral(Vec<DictItem>),
+    SetLiteral(Vec<SetItem>),
+    DictComp(Box<DictItem>, Vec<ComprehensionChunk>),
+    SetComp(Box<SetItem>, Vec<ComprehensionChunk>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -136,6 +140,19 @@ pub enum ComprehensionChunk {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum DictItem {
+    Star(Expression),
+    Unique(Expression, Expression),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum SetItem {
+    Star(Expression),
+    Unique(Expression),
+}
+
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Atom(Atom),
     Call(Box<Expression>, Arglist),
@@ -154,6 +171,7 @@ pub enum Expression {
     Generator(Box<Expression>, Vec<ComprehensionChunk>),
     CommaSeparated(Vec<Expression>),
 }
+
 pub(crate) struct ExpressionParser<ANS: AreNewlinesSpaces> {
     _phantom: PhantomData<ANS>,
 }
@@ -377,6 +395,10 @@ named!(atom<CompleteStr, Atom>,
     )) => { |strings: Vec<String>|
       Atom::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
     }
+  | ws2!(tuple!(char!('{'), char!('}'))) => { |_| Atom::DictLiteral(Vec::new()) }
+  | ws2!(delimited!(char!('{'), ws!(alt!(
+      call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker)
+    )), char!('}')))
   | ws2!(delimited!(char!('('), ws!(alt!(
       call!(ExpressionParser::<NewlinesAreSpaces>::yield_expr)
     | call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
@@ -441,15 +463,61 @@ named!(pub possibly_empty_testlist<CompleteStr, Vec<Expression>>,
   separated_list!(ws2!(char!(',')), map!(call!(Self::test), |e| *e))
 );
 
+} // end ExpressionParser
+
+/*********************************************************************
+ * Dictionary and set literals and comprehension
+ *********************************************************************/
+
+impl ExpressionParser<NewlinesAreSpaces> {
+
 // dictorsetmaker: ( ((test ':' test | '**' expr)
 //                    (comp_for | (',' (test ':' test | '**' expr))* [','])) |
 //                   ((test | star_expr)
 //                    (comp_for | (',' (test | star_expr))* [','])) )
-// TODO
+named!(dictorsetmaker<CompleteStr, Atom>,
+  ws!(alt!(
+    terminated!(separated_nonempty_list!(char!(','), call!(Self::dictitem)), opt!(char!(',')))
+      => { |v: Vec<_>| Atom::DictLiteral(v) }
+  | terminated!(separated_nonempty_list!(char!(','), call!(Self::setitem)), opt!(char!(',')))
+      => { |v: Vec<_>| Atom::SetLiteral(v) }
+  | do_parse!(
+      item: call!(Self::dictitem) >>
+      comp: call!(Self::comp_for) >> (
+        Atom::DictComp(Box::new(item), comp)
+      )
+    )
+  | do_parse!(
+      item: call!(Self::setitem) >>
+      comp: call!(Self::comp_for) >> (
+        Atom::SetComp(Box::new(item), comp)
+      )
+    )
+  ))
+);
+
+named!(dictitem<CompleteStr, DictItem>,
+  ws!(alt!(
+    preceded!(tag!("**"), call!(Self::expr)) => { |e:Box<_>| DictItem::Star(*e) }
+  | tuple!(call!(Self::test), char!(':'), call!(Self::test)) => { |(e1,_,e2): (Box<_>,_,Box<_>)| DictItem::Unique(*e1,*e2) }
+  ))
+);
+
+named!(setitem<CompleteStr, SetItem>,
+  ws!(alt!(
+    preceded!(tag!("*"), call!(Self::expr)) => { |e:Box<_>| SetItem::Star(*e) }
+  |call!(Self::test) => { |e:Box<_>| SetItem::Unique(*e) }
+  ))
+);
+
+} // end ExpressionParser
+  
 
 /*********************************************************************
  * Argument list
  *********************************************************************/
+        
+impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 
 // arglist: argument (',' argument)*  [',']
 
@@ -1216,4 +1284,82 @@ mod tests {
             ast
         )));
     }
+
+    #[test]
+    fn test_setlit() {
+        let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
+
+        assert_eq!(atom(CS("{foo}")), Ok((CS(""),
+            Atom::SetLiteral(vec![
+                SetItem::Unique(Expression::Atom(Atom::Name("foo".to_string()))),
+            ])
+        )));
+
+        assert_eq!(atom(CS("{foo, bar, baz}")), Ok((CS(""),
+            Atom::SetLiteral(vec![
+                SetItem::Unique(Expression::Atom(Atom::Name("foo".to_string()))),
+                SetItem::Unique(Expression::Atom(Atom::Name("bar".to_string()))),
+                SetItem::Unique(Expression::Atom(Atom::Name("baz".to_string()))),
+            ])
+        )));
+
+        assert_eq!(atom(CS("{foo, *bar, baz}")), Ok((CS(""),
+            Atom::SetLiteral(vec![
+                SetItem::Unique(Expression::Atom(Atom::Name("foo".to_string()))),
+                SetItem::Star(Expression::Atom(Atom::Name("bar".to_string()))),
+                SetItem::Unique(Expression::Atom(Atom::Name("baz".to_string()))),
+            ])
+        )));
+    }
+
+    #[test]
+    fn test_dictlit() {
+        let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
+
+        assert_eq!(atom(CS("{}")), Ok((CS(""),
+            Atom::DictLiteral(vec![
+            ])
+        )));
+
+        assert_eq!(atom(CS("{foo1:foo2}")), Ok((CS(""),
+            Atom::DictLiteral(vec![
+                DictItem::Unique(
+                    Expression::Atom(Atom::Name("foo1".to_string())),
+                    Expression::Atom(Atom::Name("foo2".to_string())),
+                ),
+            ])
+        )));
+
+        assert_eq!(atom(CS("{foo1:foo2, bar1:bar2, baz1:baz2}")), Ok((CS(""),
+            Atom::DictLiteral(vec![
+                DictItem::Unique(
+                    Expression::Atom(Atom::Name("foo1".to_string())),
+                    Expression::Atom(Atom::Name("foo2".to_string())),
+                ),
+                DictItem::Unique(
+                    Expression::Atom(Atom::Name("bar1".to_string())),
+                    Expression::Atom(Atom::Name("bar2".to_string())),
+                ),
+                DictItem::Unique(
+                    Expression::Atom(Atom::Name("baz1".to_string())),
+                    Expression::Atom(Atom::Name("baz2".to_string())),
+                ),
+            ])
+        )));
+
+        assert_eq!(atom(CS("{foo1:foo2, **bar, baz1:baz2}")), Ok((CS(""),
+            Atom::DictLiteral(vec![
+                DictItem::Unique(
+                    Expression::Atom(Atom::Name("foo1".to_string())),
+                    Expression::Atom(Atom::Name("foo2".to_string())),
+                ),
+                DictItem::Star(Expression::Atom(Atom::Name("bar".to_string()))),
+                DictItem::Unique(
+                    Expression::Atom(Atom::Name("baz1".to_string())),
+                    Expression::Atom(Atom::Name("baz2".to_string())),
+                ),
+            ])
+        )));
+    }
+
 }
