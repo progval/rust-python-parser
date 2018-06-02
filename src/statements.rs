@@ -283,7 +283,7 @@ named!(dotted_as_names<CompleteStr, Vec<(Vec<Name>, Option<Name>)>>,
 );
 
 // dotted_name: NAME ('.' NAME)*
-named!(dotted_name<CompleteStr, Vec<Name>>,
+named!(pub dotted_name<CompleteStr, Vec<Name>>,
   separated_nonempty_list!(tuple!(spaces!(), char!('.'), spaces!()), name)
 );
 

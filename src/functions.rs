@@ -3,19 +3,37 @@ use std::marker::PhantomData;
 use nom::types::CompleteStr;
 use nom::IResult;
 
-use expressions::{Expression, ExpressionParser};
-use helpers::{name, Name};
-use helpers::NewlinesAreSpaces;
+use statements::ImportParser;
+use expressions::{Expression, ExpressionParser, Arglist};
+use helpers::{name, Name, newline};
+use helpers::{NewlinesAreSpaces, NewlinesAreNotSpaces};
 
 /*********************************************************************
  * Decorators
  *********************************************************************/
 
+#[derive(Clone, Debug, PartialEq)]
+struct Decorator {
+    name: Vec<Name>,
+    args: Option<Arglist>,
+}
+
 // decorator: '@' dotted_name [ '(' [arglist] ')' ] NEWLINE
-// TODO
+named!(decorator<CompleteStr, Decorator>,
+  ws2!(do_parse!(
+    char!('@') >>
+    name: call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name) >>
+    args: opt!(ws2!(delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
+    newline >> (
+      Decorator { name, args }
+    )
+  ))
+);
 
 // decorators: decorator+
-// TODO
+named!(decorators<CompleteStr, Vec<Decorator>>,
+  many1!(decorator)
+);
 
 // decorated: decorators (classdef | funcdef | async_funcdef)
 // TODO
@@ -148,7 +166,10 @@ impl IsItTyped for Untyped {
 }
 
 // parameters: '(' [typedargslist] ')'
-//
+named!(parameters<CompleteStr, TypedArgsList>,
+  map!(delimited!(char!('('), opt!(ws!(typedargslist)), char!(')')), |o| o.unwrap_or_default())
+);
+
 // typedargslist: (tfpdef ['=' test] (',' tfpdef ['=' test])* [',' [
 //         '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
 //       | '**' tfpdef [',']]]
@@ -228,7 +249,42 @@ pub(crate) fn varargslist(i: CompleteStr) -> IResult<CompleteStr, UntypedArgsLis
 mod tests {
     use super::*;
     use nom::types::CompleteStr as CS;
-    use expressions::Atom;
+    use expressions::{Argument, Atom};
+
+    #[test]
+    fn test_decorator() {
+        assert_eq!(decorator(CS("@foo\n")), Ok((CS(""),
+            Decorator {
+                name: vec!["foo".to_string()],
+                args: None,
+            }
+        )));
+        assert_eq!(decorator(CS("@foo.bar\n")), Ok((CS(""),
+            Decorator {
+                name: vec!["foo".to_string(), "bar".to_string()],
+                args: None,
+            }
+        )));
+
+        assert_eq!(decorator(CS("@foo(baz)\n")), Ok((CS(""),
+            Decorator {
+                name: vec!["foo".to_string()],
+                args: Some(Arglist {
+                    positional_args: vec![Argument::Normal(Expression::Atom(Atom::Name("baz".to_string())))],
+                    keyword_args: Vec::new(),
+                })
+            }
+        )));
+        assert_eq!(decorator(CS("@foo.bar(baz)\n")), Ok((CS(""),
+            Decorator {
+                name: vec!["foo".to_string(), "bar".to_string()],
+                args: Some(Arglist {
+                    positional_args: vec![Argument::Normal(Expression::Atom(Atom::Name("baz".to_string())))],
+                    keyword_args: Vec::new(),
+                })
+            }
+        )));
+    }
 
     #[test]
     fn test_positional() {

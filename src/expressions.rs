@@ -82,8 +82,8 @@ pub enum Argument<T> {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Arglist {
-    positional_args: Vec<Argument<Expression>>,
-    keyword_args: Vec<Argument<(Name, Expression)>>,
+    pub positional_args: Vec<Argument<Expression>>,
+    pub keyword_args: Vec<Argument<(Name, Expression)>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -629,7 +629,7 @@ fn build_arglist(input: CompleteStr, args: Vec<RawArgument>) -> IResult<Complete
 
     Ok((input, Arglist { positional_args, keyword_args }))
 }
-named!(arglist<CompleteStr, Arglist>,
+named!(pub arglist<CompleteStr, Arglist>,
   do_parse!(
     args: separated_list!(ws!(char!(',')),
       alt!(
