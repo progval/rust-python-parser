@@ -176,6 +176,13 @@ pub(crate) struct ExpressionParser<ANS: AreNewlinesSpaces> {
     _phantom: PhantomData<ANS>,
 }
 
+named!(number<CompleteStr, Expression>,
+  alt!(
+    many1!(call!(nom::digit)) => {|v:Vec<CompleteStr>| Expression::Int(v.into_iter().map(|s| s.0.to_string()).collect::<Vec<_>>().join("").parse::<i64>().unwrap())} // FIXME: this is ridiculous...
+  // TODO: support more number types
+  )
+);
+
 impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 
 /*********************************************************************
@@ -434,7 +441,7 @@ named!(atom<CompleteStr, Box<Expression>>,
   | ws2!(delimited!(char!('['), ws!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(']')))
-  // TODO: numbers
+  | ws2!(number)
   ), |e| Box::new(e))
 );
 
