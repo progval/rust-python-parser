@@ -85,12 +85,27 @@ pub struct Classdef {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Try {
+    pub try_block: Vec<Statement>,
+    /// except `1 [as 2]: 3`
+    pub except_clauses: Vec<(Expression, Option<Name>, Vec<Statement>)>,
+    /// Empty iff no `except:` clause.
+    pub last_except: Vec<Statement>,
+    /// Empty iff no `else:` clause.
+    pub else_block: Vec<Statement>,
+    /// Empty iff no `finally:` clause.
+    pub finally_block: Vec<Statement>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum CompoundStatement {
     If(Vec<(Test, Vec<Statement>)>, Option<Vec<Statement>>),
     For { async: bool, item: Vec<Expression>, iterator: Vec<Expression>, for_block: Vec<Statement>, else_block: Option<Vec<Statement>> },
     While(Test, Vec<Statement>, Option<Vec<Statement>>),
+    With(Vec<(Expression, Option<Expression>)>, Vec<Statement>),
     Funcdef(Funcdef),
     Classdef(Classdef),
+    Try(Try),
 }
 
 
@@ -438,8 +453,9 @@ named_args!(compound_stmt(first_indent: usize, indent: usize) <CompleteStr, Comp
       call!(if_stmt, indent)
     | call!(for_stmt, indent)
     | call!(while_stmt, indent)
+    | call!(try_stmt, indent)
+    | call!(with_stmt, indent)
     | call!(decorated, indent) // Also takes care of funcdef, classdef, and ASYNC funcdef
-    // TODO
     )
   )
 );
@@ -514,17 +530,83 @@ named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 //             ['else' ':' suite]
 //             ['finally' ':' suite] |
 //             'finally' ':' suite))
-// TODO
+// except_clause: 'except' [test ['as' NAME]]
+named_args!(try_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    tag!("try") >>
+    ws2!(char!(':')) >>
+    try_block: call!(block, indent) >>
+    except_clauses: many0!(do_parse!(
+      newline >>
+      count!(char!(' '), indent) >> 
+      tag!("except") >>
+      space_sep2 >>
+      catch_what: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
+      catch_as: opt!(preceded!(tuple!(space_sep2, tag!("as"), space_sep2), name)) >>
+      ws2!(char!(':')) >>
+      block: call!(block, indent) >> (
+        (*catch_what, catch_as, block)
+      )
+    )) >>
+    last_except: opt!(do_parse!( 
+      newline >>
+      count!(char!(' '), indent) >>
+      tag!("except") >>
+      ws2!(char!(':')) >>
+      r: call!(block, indent) >>
+      (r)
+    )) >>
+    else_block: opt!(do_parse!( 
+      newline >>
+      count!(char!(' '), indent) >>
+      tag!("else") >>
+      ws2!(char!(':')) >>
+      r: call!(block, indent) >>
+      (r)
+    )) >>
+    finally_block: opt!(do_parse!( 
+      newline >>
+      count!(char!(' '), indent) >>
+      tag!("finally") >>
+      ws2!(char!(':')) >>
+      r: call!(block, indent) >>
+      (r)
+    )) >> (
+      CompoundStatement::Try(Try {
+          try_block, except_clauses,
+          last_except: last_except.unwrap_or_default(),
+          else_block: else_block.unwrap_or_default(),
+          finally_block: finally_block.unwrap_or_default()
+      })
+    )
+  )
+);
 
 // with_stmt: 'with' with_item (',' with_item)*  ':' suite
-// TODO
-// TODO async
-
 // with_item: test ['as' expr]
-// TODO
+named_args!(with_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    tag!("with") >>
+    space_sep2 >>
+    contexts: separated_nonempty_list!(ws2!(char!(',')), do_parse!(
+      context: call!(ExpressionParser::<NewlinesAreNotSpaces>::expr) >>
+      as_: opt!(preceded!(
+        tuple!(space_sep2, tag!("as"), space_sep2), 
+        call!(ExpressionParser::<NewlinesAreNotSpaces>::expr)
+      )) >> (
+        (*context, as_.map(|e| *e))
+      )
+    )) >>
+    ws2!(char!(':')) >>
+    code: call!(block, indent) >> (
+      CompoundStatement::With(contexts, code)
+    )
+  )
+);
 
-// except_clause: 'except' [test ['as' NAME]]
-// TODO
+
+
+    
 
 /*********************************************************************
  * Unit tests
@@ -908,4 +990,97 @@ mod tests {
             )
         )));
     }
+
+    #[test]
+    fn test_with() {
+        use expressions::Atom;
+
+        assert_eq!(with_stmt(CS("with foo:\n del bar"), 0), Ok((CS(""),
+            CompoundStatement::With(
+                vec![
+                    (Expression::Atom(Atom::Name("foo".to_string())), None),
+                ],
+                vec![
+                    Statement::Del(vec!["bar".to_string()])
+                ],
+            )
+        )));
+
+        assert_eq!(with_stmt(CS("with foo as bar:\n del baz"), 0), Ok((CS(""),
+            CompoundStatement::With(
+                vec![
+                    (Expression::Atom(Atom::Name("foo".to_string())), Some(Expression::Atom(Atom::Name("bar".to_string())))),
+                ],
+                vec![
+                    Statement::Del(vec!["baz".to_string()])
+                ],
+            )
+        )));
+    }
+
+    #[test]
+    fn test_try() {
+        use expressions::Atom;
+
+        assert_eq!(try_stmt(CS("try:\n del foo\nexcept Bar:\n del baz"), 0), Ok((CS(""),
+            CompoundStatement::Try(Try {
+                try_block: vec![
+                    Statement::Del(vec!["foo".to_string()]),
+                ],
+                except_clauses: vec![
+                    (
+                        Expression::Atom(Atom::Name("Bar".to_string())),
+                        None,
+                        vec![Statement::Del(vec!["baz".to_string()])],
+                    ),
+                ],
+                last_except: vec![],
+                else_block: vec![],
+                finally_block: vec![],
+            })
+        )));
+
+        assert_eq!(try_stmt(CS("try:\n del foo\nexcept:\n del baz"), 0), Ok((CS(""),
+            CompoundStatement::Try(Try {
+                try_block: vec![
+                    Statement::Del(vec!["foo".to_string()]),
+                ],
+                except_clauses: vec![],
+                last_except: vec![
+                    Statement::Del(vec!["baz".to_string()]),
+                ],
+                else_block: vec![],
+                finally_block: vec![],
+            })
+        )));
+
+        assert_eq!(try_stmt(CS("try:\n del foo\nelse:\n del baz"), 0), Ok((CS(""),
+            CompoundStatement::Try(Try {
+                try_block: vec![
+                    Statement::Del(vec!["foo".to_string()]),
+                ],
+                except_clauses: vec![],
+                last_except: vec![],
+                else_block: vec![
+                    Statement::Del(vec!["baz".to_string()]),
+                ],
+                finally_block: vec![],
+            })
+        )));
+
+        assert_eq!(try_stmt(CS("try:\n del foo\nfinally:\n del baz"), 0), Ok((CS(""),
+            CompoundStatement::Try(Try {
+                try_block: vec![
+                    Statement::Del(vec!["foo".to_string()]),
+                ],
+                except_clauses: vec![],
+                last_except: vec![],
+                else_block: vec![],
+                finally_block: vec![
+                    Statement::Del(vec!["baz".to_string()]),
+                ],
+            })
+        )));
+    }
+
 }

@@ -251,7 +251,7 @@ named!(lambdef_nocond<CompleteStr, Box<Expression>>,
 macro_rules! bop {
     ( $name:ident, $child:path, $tag:ident!($($args:tt)*) ) => {
     //( $name:ident, $child:tt, $tag1:ident!($($args1:tt)*) => $op1:tt, $( $tag:ident!($($args:tt)*) => $op:tt ),* ) => {
-        named!($name<CompleteStr, Box<Expression>>,
+        named!(pub $name<CompleteStr, Box<Expression>>,
           do_parse!(
             first: call!($child) >>
             r: fold_many0!(
