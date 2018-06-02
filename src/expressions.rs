@@ -547,24 +547,6 @@ named_args!(setmaker(item1: SetItem) <CompleteStr, Atom>,
   )
 );
 
-    /*
-    terminated!(separated_nonempty_list!(char!(','), call!(Self::dictitem)), opt!(char!(',')))
-      => { |v: Vec<_>| Atom::DictLiteral(v) }
-  | terminated!(separated_nonempty_list!(char!(','), call!(Self::setitem)), opt!(char!(',')))
-      => { |v: Vec<_>| Atom::SetLiteral(v) }
-  | do_parse!(
-      item: call!(Self::dictitem) >>
-      comp: call!(Self::comp_for) >> (
-        Atom::DictComp(Box::new(item), comp)
-      )
-    )
-  | do_parse!(
-      item: call!(Self::setitem) >>
-      comp: call!(Self::comp_for) >> (
-        Atom::SetComp(Box::new(item), comp)
-      )
-    )*/
-
 named!(dictitem<CompleteStr, DictItem>,
   ws!(alt!(
     preceded!(tag!("**"), call!(Self::expr)) => { |e:Box<_>| DictItem::Star(*e) }
