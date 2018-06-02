@@ -3,9 +3,10 @@ use std::marker::PhantomData;
 use nom::types::CompleteStr;
 use nom::IResult;
 
-use statements::ImportParser;
+use statements::{ImportParser, block};
+use statements::{CompoundStatement, Funcdef};
 use expressions::{Expression, ExpressionParser, Arglist};
-use helpers::{name, Name, newline};
+use helpers::{name, Name, newline, space_sep2};
 use helpers::{NewlinesAreSpaces, NewlinesAreNotSpaces};
 
 /*********************************************************************
@@ -13,40 +14,64 @@ use helpers::{NewlinesAreSpaces, NewlinesAreNotSpaces};
  *********************************************************************/
 
 #[derive(Clone, Debug, PartialEq)]
-struct Decorator {
+pub struct Decorator {
     name: Vec<Name>,
     args: Option<Arglist>,
 }
 
 // decorator: '@' dotted_name [ '(' [arglist] ')' ] NEWLINE
-named!(decorator<CompleteStr, Decorator>,
-  ws2!(do_parse!(
-    char!('@') >>
-    name: call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name) >>
-    args: opt!(ws2!(delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
-    newline >> (
-      Decorator { name, args }
-    )
-  ))
+named_args!(decorator(indent: usize) <CompleteStr, Decorator>,
+  preceded!(count!(char!(' '), indent),
+    ws2!(do_parse!(
+      char!('@') >>
+      name: call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name) >>
+      args: opt!(ws2!(delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
+      newline >> (
+        Decorator { name, args }
+      )
+    ))
+  )
 );
 
 // decorators: decorator+
-named!(decorators<CompleteStr, Vec<Decorator>>,
-  many1!(decorator)
+named_args!(decorators(indent: usize) <CompleteStr, Vec<Decorator>>,
+  many0!(call!(decorator, indent))
 );
 
 // decorated: decorators (classdef | funcdef | async_funcdef)
-// TODO
+named_args!(pub decorated(indent: usize) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    decorators: call!(decorators, indent) >>
+    s: alt!(
+        call!(funcdef, indent, decorators)
+      // TODO
+    ) >> (s)
+  )
+);
 
 /*********************************************************************
  * Function definition
  *********************************************************************/
 
 // async_funcdef: ASYNC funcdef
-// TODO
-
 // funcdef: 'def' NAME parameters ['->' test] ':' suite
-// TODO
+named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <CompleteStr, CompoundStatement>,
+  do_parse!(
+    count!(char!(' '), indent) >>
+    async: opt!(tuple!(tag!("async"), space_sep2)) >>
+    tag!("def") >>
+    space_sep2 >>
+    name: name >>
+    parameters: ws2!(parameters) >>
+    return_type: opt!(ws2!(preceded!(tag!("->"), call!(ExpressionParser::<NewlinesAreNotSpaces>::test)))) >>
+    ws2!(char!(':')) >> 
+    code: call!(block, indent) >> (
+      CompoundStatement::Funcdef(Funcdef {
+          async: async.is_some(), decorators, name, parameters, return_type: return_type.map(|t| *t), code
+      })
+    )
+  )
+);
 
 /*********************************************************************
  * Function parameters
@@ -278,23 +303,24 @@ mod tests {
     use super::*;
     use nom::types::CompleteStr as CS;
     use expressions::{Argument, Atom};
+    use statements::Statement;
 
     #[test]
     fn test_decorator() {
-        assert_eq!(decorator(CS("@foo\n")), Ok((CS(""),
+        assert_eq!(decorator(CS("@foo\n"), 0), Ok((CS(""),
             Decorator {
                 name: vec!["foo".to_string()],
                 args: None,
             }
         )));
-        assert_eq!(decorator(CS("@foo.bar\n")), Ok((CS(""),
+        assert_eq!(decorator(CS("@foo.bar\n"), 0), Ok((CS(""),
             Decorator {
                 name: vec!["foo".to_string(), "bar".to_string()],
                 args: None,
             }
         )));
 
-        assert_eq!(decorator(CS("@foo(baz)\n")), Ok((CS(""),
+        assert_eq!(decorator(CS("@foo(baz)\n"), 0), Ok((CS(""),
             Decorator {
                 name: vec!["foo".to_string()],
                 args: Some(Arglist {
@@ -303,7 +329,7 @@ mod tests {
                 })
             }
         )));
-        assert_eq!(decorator(CS("@foo.bar(baz)\n")), Ok((CS(""),
+        assert_eq!(decorator(CS("@foo.bar(baz)\n"), 0), Ok((CS(""),
             Decorator {
                 name: vec!["foo".to_string(), "bar".to_string()],
                 args: Some(Arglist {
@@ -312,6 +338,33 @@ mod tests {
                 })
             }
         )));
+    }
+
+    #[test]
+    fn test_funcdef() {
+        assert_eq!(decorated(CS("def foo():\n bar"), 0), Ok((CS(""),
+            CompoundStatement::Funcdef(Funcdef {
+                async: false,
+                decorators: vec![],
+                name: "foo".to_string(),
+                parameters: TypedArgsList::default(),
+                return_type: None,
+                code: vec![Statement::Expressions(vec![Expression::Atom(Atom::Name("bar".to_string()))])],
+            })
+        )));
+
+        assert_eq!(decorated(CS(" def foo():\n  bar"), 1), Ok((CS(""),
+            CompoundStatement::Funcdef(Funcdef {
+                async: false,
+                decorators: vec![],
+                name: "foo".to_string(),
+                parameters: TypedArgsList::default(),
+                return_type: None,
+                code: vec![Statement::Expressions(vec![Expression::Atom(Atom::Name("bar".to_string()))])],
+            })
+        )));
+
+        assert!(decorated(CS(" def foo():\n bar"), 1).is_err());
     }
 
     #[test]

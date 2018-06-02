@@ -4,6 +4,7 @@ use nom::types::CompleteStr;
 
 use helpers::*;
 use expressions::{Expression, ExpressionParser};
+use functions::{decorated, Decorator, TypedArgsList};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Import {
@@ -44,11 +45,22 @@ pub enum Statement {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Funcdef {
+    pub async: bool,
+    pub decorators: Vec<Decorator>,
+    pub name: String,
+    pub parameters: TypedArgsList,
+    pub return_type: Option<Expression>,
+    pub code: Vec<Statement>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum CompoundStatement {
     // TODO
     If(Vec<(Test, Vec<Statement>)>, Option<Vec<Statement>>),
-    For(Vec<Expr>, Vec<Expr>, Vec<Statement>, Option<Vec<Statement>>),
+    For { async: bool, item: Vec<Expression>, iterator: Vec<Expression>, for_block: Vec<Statement>, else_block: Option<Vec<Statement>> },
     While(Test, Vec<Statement>, Option<Vec<Statement>>),
+    Funcdef(Funcdef),
 }
 
 
@@ -294,7 +306,7 @@ named!(pub dotted_name<CompleteStr, Vec<Name>>,
  *********************************************************************/
 
 // suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
-named_args!(block(indent: usize) <CompleteStr, Vec<Statement>>,
+named_args!(pub block(indent: usize) <CompleteStr, Vec<Statement>>,
   alt!(
     do_parse!(
       newline >>
@@ -334,13 +346,14 @@ named_args!(compound_stmt(first_indent: usize, indent: usize) <CompleteStr, Comp
       call!(if_stmt, indent)
     | call!(for_stmt, indent)
     | call!(while_stmt, indent)
+    | call!(decorated, indent) // Also takes care of funcdef, classdef, and ASYNC funcdef
     // TODO
     )
   )
 );
 
 // async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
-// TODO
+// taken care of in other parsers
 
 named_args!(else_block(indent: usize) <CompleteStr, Option<Vec<Statement>>>,
   opt!(
@@ -385,14 +398,21 @@ named_args!(while_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 // for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
 named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
   do_parse!(
-    tag!("for ") >>
-    item: tag!("foo") >>
-    tag!(" in ") >>
-    iterator: tag!("bar") >>
+    async: opt!(tuple!(tag!("async"), space_sep2)) >>
+    tag!("for") >>
+    space_sep2 >>
+    item: call!(ExpressionParser::<NewlinesAreNotSpaces>::exprlist) >>
+    space_sep2 >>
+    tag!("in") >>
+    space_sep2 >>
+    iterator: call!(ExpressionParser::<NewlinesAreNotSpaces>::exprlist) >>
     ws2!(char!(':')) >>
     for_block: call!(block, indent) >>
     else_block: call!(else_block, indent) >> ({
-      CompoundStatement::For(vec![item.to_string()], vec![iterator.to_string()], for_block, else_block)
+      CompoundStatement::For {
+          async: async.is_some(),
+          item, iterator, for_block, else_block
+      }
     })
   )
 );
@@ -406,6 +426,7 @@ named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 
 // with_stmt: 'with' with_item (',' with_item)*  ':' suite
 // TODO
+// TODO async
 
 // with_item: test ['as' expr]
 // TODO
@@ -424,6 +445,7 @@ named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 mod tests {
     use super::*;
     use nom::types::CompleteStr as CS;
+    use expressions::Atom;
 
     #[test]
     fn test_statement_indent() {
@@ -659,32 +681,34 @@ mod tests {
     #[test]
     fn test_for() {
         assert_eq!(compound_stmt(CS("for foo in bar:\n del baz"), 0, 0), Ok((CS(""),
-            CompoundStatement::For(
-                vec!["foo".to_string()],
-                vec!["bar".to_string()],
-                vec![
+            CompoundStatement::For {
+                async: false,
+                item: vec![Expression::Atom(Atom::Name("foo".to_string()))],
+                iterator: vec![Expression::Atom(Atom::Name("bar".to_string()))],
+                for_block: vec![
                     Statement::Del(vec!["baz".to_string()])
                 ],
-                None
-            )
+                else_block: None
+            }
         )));
     }
 
     #[test]
     fn test_for_else() {
         assert_eq!(compound_stmt(CS("for foo in bar:\n del baz\nelse:\n del qux"), 0, 0), Ok((CS(""),
-            CompoundStatement::For(
-                vec!["foo".to_string()],
-                vec!["bar".to_string()],
-                vec![
+            CompoundStatement::For {
+                async: false,
+                item: vec![Expression::Atom(Atom::Name("foo".to_string()))],
+                iterator: vec![Expression::Atom(Atom::Name("bar".to_string()))],
+                for_block: vec![
                     Statement::Del(vec!["baz".to_string()])
                 ],
-                Some(
+                else_block: Some(
                     vec![
                         Statement::Del(vec!["qux".to_string()])
                     ]
                 )
-            )
+            }
         )));
     }
 

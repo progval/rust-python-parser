@@ -474,7 +474,7 @@ named_args!(subscript_trail(first: Option<Expression>) <CompleteStr, Subscript>,
 );
 
 // exprlist: (expr|star_expr) (',' (expr|star_expr))* [',']
-named!(exprlist<CompleteStr, Vec<Expression>>,
+named!(pub exprlist<CompleteStr, Vec<Expression>>,
   separated_nonempty_list!(ws2!(char!(',')), map!(alt!(call!(Self::expr)|call!(Self::star_expr)), |e| *e))
 );
 

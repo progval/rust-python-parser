@@ -83,8 +83,6 @@ pub type Name = String;
 
 pub type Test = String;
 
-pub type Expr = String;
-
 use nom::alphanumeric;
 named!(pub name<CompleteStr, String>,
   map!(alphanumeric, |s| s.to_string())
