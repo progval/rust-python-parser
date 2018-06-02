@@ -5,6 +5,7 @@ use nom::types::CompleteStr;
 use nom::{IResult, Err, Context, ErrorKind};
 use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
 
+use helpers;
 use helpers::{Name, name};
 use helpers::{AreNewlinesSpaces, NewlinesAreSpaces};
 
@@ -477,6 +478,76 @@ impl ExpressionParser<NewlinesAreSpaces> {
 //                    (comp_for | (',' (test | star_expr))* [','])) )
 named!(dictorsetmaker<CompleteStr, Atom>,
   ws!(alt!(
+    do_parse!(
+      tag!("**") >>
+      e: map!(call!(Self::expr), |e: Box<_>| DictItem::Star(*e)) >> 
+      r: call!(Self::dictmaker, e) >>
+      (r)
+    )
+  | do_parse!(
+      tag!("*") >>
+      e: map!(call!(Self::expr), |e: Box<_>| SetItem::Star(*e)) >> 
+      r: call!(Self::setmaker, e) >>
+      (r)
+    )
+  | do_parse!(
+      key: call!(Self::test) >>
+      r: alt!(
+        do_parse!(
+          char!(':') >>
+          item: map!(call!(Self::test), |value: Box<_>| DictItem::Unique(*key.clone(), *value)) >> // FIXME: do not clone
+          r: call!(Self::dictmaker, item) >>
+          (r)
+        )
+      | call!(Self::setmaker, SetItem::Unique(*key))
+      ) >>
+      (r)
+    )
+  ))
+);
+
+named_args!(dictmaker(item1: DictItem) <CompleteStr, Atom>, 
+  map!(
+    opt!(alt!(
+      preceded!(char!(','), separated_list!(char!(','), call!(Self::dictitem))) => { |v: Vec<_>| {
+        let mut v = v;
+        v.insert(0, item1.clone()); // FIXME: do not clone
+        Atom::DictLiteral(v)
+      }}
+    | preceded!(peek!(tuple!(tag!("for"), call!(helpers::space_sep))), call!(Self::comp_for)) => { |comp| {
+        Atom::DictComp(Box::new(item1.clone()), comp) // FIXME: do not clone
+      }}
+    )),
+    |rest| {
+      match rest {
+          Some(r) => r,
+          None => Atom::DictLiteral(vec![item1]),
+      }
+    }
+  )
+);
+
+named_args!(setmaker(item1: SetItem) <CompleteStr, Atom>, 
+  do_parse!(
+    rest:opt!(alt!(
+      preceded!(char!(','), separated_list!(char!(','), call!(Self::setitem))) => { |v: Vec<_>| {
+        let mut v = v;
+        v.insert(0, item1.clone()); // FIXME: do not clone
+        Atom::SetLiteral(v)
+      }}
+    | preceded!(peek!(tuple!(tag!("for"), call!(helpers::space_sep))), call!(Self::comp_for)) => { |comp| {
+        Atom::SetComp(Box::new(item1.clone()), comp) // FIXME: do not clone
+      }}
+    )) >> (
+      match rest {
+          Some(r) => r,
+          None => Atom::SetLiteral(vec![item1]),
+      }
+    )
+  )
+);
+
+    /*
     terminated!(separated_nonempty_list!(char!(','), call!(Self::dictitem)), opt!(char!(',')))
       => { |v: Vec<_>| Atom::DictLiteral(v) }
   | terminated!(separated_nonempty_list!(char!(','), call!(Self::setitem)), opt!(char!(',')))
@@ -492,9 +563,7 @@ named!(dictorsetmaker<CompleteStr, Atom>,
       comp: call!(Self::comp_for) >> (
         Atom::SetComp(Box::new(item), comp)
       )
-    )
-  ))
-);
+    )*/
 
 named!(dictitem<CompleteStr, DictItem>,
   ws!(alt!(
@@ -594,6 +663,10 @@ named_args!(comp_iter(acc: Vec<ComprehensionChunk>) <CompleteStr, Vec<Comprehens
   )
 );
 
+named_args!(opt_comp_iter(acc: Vec<ComprehensionChunk>) <CompleteStr, Vec<ComprehensionChunk>>,
+  map!(opt!(call!(Self::comp_iter, acc.clone())), |r| r.unwrap_or(acc)) // FIXME: do not clone
+);
+
 // comp_for: [ASYNC] 'for' exprlist 'in' or_test [comp_iter]
 named!(comp_for<CompleteStr, Vec<ComprehensionChunk>>,
   call!(Self::comp_for2, Vec::new())
@@ -606,9 +679,9 @@ named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <CompleteStr, Vec<Comprehens
     item: call!(Self::exprlist) >>
     space_sep!() >>
     tag!("in") >>
-    iterator: map!(call!(Self::or_test), |e| *e) >>
     space_sep!() >>
-    r: call!(Self::comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::For { async, item, iterator }); acc }) >> (
+    iterator: map!(call!(Self::or_test), |e| *e) >>
+    r: call!(Self::opt_comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::For { async, item, iterator }); acc }) >> (
       r
     )
   )
@@ -621,7 +694,7 @@ named_args!(comp_if(acc: Vec<ComprehensionChunk>) <CompleteStr, Vec<Comprehensio
     space_sep!() >>
     cond: map!(call!(Self::test_nocond), |e| *e) >>
     space_sep!() >>
-    r: call!(Self::comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::If { cond }); acc }) >> (
+    r: call!(Self::opt_comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::If { cond }); acc }) >> (
       r
     )
   )
@@ -1359,6 +1432,42 @@ mod tests {
                     Expression::Atom(Atom::Name("baz2".to_string())),
                 ),
             ])
+        )));
+    }
+
+    #[test]
+    fn test_comp_for() {
+        let comp_for = ExpressionParser::<NewlinesAreNotSpaces>::comp_for;
+
+        assert_eq!(comp_for(CS("for bar in baz")), Ok((CS(""), vec![
+            ComprehensionChunk::For {
+                async: false,
+                item: vec![
+                    Expression::Atom(Atom::Name("bar".to_string())),
+                ],
+                iterator: Expression::Atom(Atom::Name("baz".to_string())),
+            },
+        ])));
+
+    }
+
+    #[test]
+    fn test_setcomp() {
+        let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
+
+        assert_eq!(atom(CS("{foo for bar in baz}")), Ok((CS(""),
+            Atom::SetComp(
+                Box::new(SetItem::Unique(Expression::Atom(Atom::Name("foo".to_string())))),
+                vec![
+                    ComprehensionChunk::For {
+                        async: false,
+                        item: vec![
+                            Expression::Atom(Atom::Name("bar".to_string())),
+                        ],
+                        iterator: Expression::Atom(Atom::Name("baz".to_string())),
+                    },
+                ]
+            )
         )));
     }
 
