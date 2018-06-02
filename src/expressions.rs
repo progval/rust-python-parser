@@ -377,7 +377,10 @@ named!(atom<CompleteStr, Atom>,
     )) => { |strings: Vec<String>|
       Atom::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
     }
-  | ws2!(delimited!(char!('('), ws!(alt!(call!(Self::yield_expr) | call!(Self::testlist_comp))), char!(')'))) => { |e| Atom::Generator(e) }
+  | ws2!(delimited!(char!('('), ws!(alt!(
+      call!(ExpressionParser::<NewlinesAreSpaces>::yield_expr)
+    | call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
+    )), char!(')'))) => { |e| Atom::Generator(e) }
   // TODO
   )
 );
