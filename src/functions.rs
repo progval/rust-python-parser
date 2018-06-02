@@ -44,7 +44,13 @@ pub enum StarParams<T> {
     Named(T),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+impl<T> Default for StarParams<T> {
+    fn default() -> StarParams<T> {
+        StarParams::No
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Default,)]
 pub struct TypedArgsList {
     positional_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
     star_args: StarParams<(Name, Option<Expression>)>,
@@ -52,7 +58,7 @@ pub struct TypedArgsList {
     star_kwargs: Option<(Name, Option<Expression>)>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct UntypedArgsList {
     positional_args: Vec<(Name, Option<Expression>)>,
     star_args: StarParams<Name>,
@@ -208,6 +214,14 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
         )
       )
     ));
+}
+
+pub(crate) fn typedargslist(i: CompleteStr) -> IResult<CompleteStr, TypedArgsList, u32> {
+    ParamlistParser::<Typed>::parse(i)
+}
+
+pub(crate) fn varargslist(i: CompleteStr) -> IResult<CompleteStr, UntypedArgsList, u32> {
+    ParamlistParser::<Untyped>::parse(i)
 }
 
 #[cfg(test)]

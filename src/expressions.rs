@@ -8,6 +8,7 @@ use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/n
 use helpers;
 use helpers::{Name, name};
 use helpers::{AreNewlinesSpaces, NewlinesAreSpaces};
+use functions::{varargslist, UntypedArgsList};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArgumentError {
@@ -171,6 +172,7 @@ pub enum Expression {
     Star(Box<Expression>),
     Generator(Box<Expression>, Vec<ComprehensionChunk>),
     CommaSeparated(Vec<Expression>),
+    Lambdef(UntypedArgsList, Box<Expression>),
 }
 
 pub(crate) struct ExpressionParser<ANS: AreNewlinesSpaces> {
@@ -206,23 +208,43 @@ named!(pub test<CompleteStr, Box<Expression>>,
         }
       )
     )
+  | call!(Self::lambdef)
   )
-  // TODO
 );
 
 // test_nocond: or_test | lambdef_nocond
 named!(test_nocond<CompleteStr, Box<Expression>>,
   alt!(
     call!(Self::or_test)
-    // TODO
+  | call!(Self::lambdef_nocond)
   )
 );
 
 // lambdef: 'lambda' [varargslist] ':' test
-// TODO
+named!(lambdef<CompleteStr, Box<Expression>>,
+  do_parse!(
+    tag!("lambda") >>
+    spaces!() >>
+    args: opt!(varargslist) >>
+    char!(':') >>
+    code: call!(Self::test) >> (
+      Box::new(Expression::Lambdef(args.unwrap_or_default(), code))
+    )
+  )
+);
 
 // lambdef_nocond: 'lambda' [varargslist] ':' test_nocond
-// TODO
+named!(lambdef_nocond<CompleteStr, Box<Expression>>,
+  do_parse!(
+    tag!("lambda") >>
+    spaces!() >>
+    args: opt!(varargslist) >>
+    char!(':') >>
+    code: call!(Self::test_nocond) >> (
+      Box::new(Expression::Lambdef(args.unwrap_or_default(), code))
+    )
+  )
+);
 
 } // End ExpressionParser
 
