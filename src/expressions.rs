@@ -434,6 +434,7 @@ named!(atom<CompleteStr, Box<Expression>>,
   | ws2!(delimited!(char!('['), ws!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(']')))
+  // TODO: numbers
   ), |e| Box::new(e))
 );
 

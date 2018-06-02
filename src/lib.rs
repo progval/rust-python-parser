@@ -18,6 +18,7 @@ mod functions;
 
 use helpers::*;
 use statements::*;
+use expressions::*;
 
 // single_input: NEWLINE | simple_stmt | compound_stmt NEWLINE
 named!(pub parse_single_input <CompleteStr, Vec<Statement>>,
@@ -28,10 +29,21 @@ named!(pub parse_single_input <CompleteStr, Vec<Statement>>,
 );
 
 // file_input: (NEWLINE | stmt)* ENDMARKER
-// TODO
+named!(pub file_input <CompleteStr, Vec<Statement>>,
+  fold_many0!(
+    alt!(
+      call!(statement, 0, 0) => { |s| Some(s) }
+    | newline => { |_| None }
+    ),
+    Vec::new(),
+    |acc: Vec<_>, item| { let mut acc = acc; if let Some(s) = item { acc.extend(s); } acc }
+  )
+);
 
 // eval_input: testlist NEWLINE* ENDMARKER
-// TODO
+named!(pub eval_input <CompleteStr, Vec<Expression>>,
+  terminated!(ws2!(call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist)), many0!(newline))
+);
 
 // encoding_decl: NAME
 // TODO
