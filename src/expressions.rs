@@ -49,25 +49,6 @@ impl From<ArgumentError> for u32 {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Atom {
-    Ellipsis,
-    None,
-    True,
-    False,
-    Name(Name),
-    Int(i64),
-    Complex { real: f64, imaginary: f64 },
-    Float(f64),
-    String(String),
-    Bytes(Vec<u8>),
-    Generator(Box<Expression>),
-    DictLiteral(Vec<DictItem>),
-    SetLiteral(Vec<SetItem>),
-    DictComp(Box<DictItem>, Vec<ComprehensionChunk>),
-    SetComp(Box<SetItem>, Vec<ComprehensionChunk>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
 enum RawArgument {
     Positional(Expression),
     Keyword(Expression, Expression),
@@ -156,7 +137,25 @@ pub enum SetItem {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
-    Atom(Atom),
+    Ellipsis,
+    None,
+    True,
+    False,
+    Name(Name),
+    Int(i64),
+    Complex { real: f64, imaginary: f64 },
+    Float(f64),
+    String(String),
+    Bytes(Vec<u8>),
+    DictLiteral(Vec<DictItem>),
+    SetLiteral(Vec<SetItem>),
+    ListLiteral(Vec<SetItem>),
+    TupleLiteral(Vec<SetItem>),
+    DictComp(Box<DictItem>, Vec<ComprehensionChunk>),
+    SetComp(Box<SetItem>, Vec<ComprehensionChunk>),
+    ListComp(Box<SetItem>, Vec<ComprehensionChunk>),
+    Generator(Box<SetItem>, Vec<ComprehensionChunk>),
+
     Call(Box<Expression>, Arglist),
     Subscript(Box<Expression>, Vec<Subscript>),
     /// `foo.bar`
@@ -170,8 +169,6 @@ pub enum Expression {
     Yield(Vec<Expression>),
     YieldFrom(Box<Expression>),
     Star(Box<Expression>),
-    Generator(Box<Expression>, Vec<ComprehensionChunk>),
-    CommaSeparated(Vec<Expression>),
     Lambdef(UntypedArgsList, Box<Expression>),
 }
 
@@ -381,7 +378,7 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 // subscriptlist: subscript (',' subscript)* [',']
 named!(atom_expr<CompleteStr, Box<Expression>>,
   do_parse!(
-    lhs: map!(call!(Self::atom), |a| Box::new(Expression::Atom(a))) >>
+    lhs: call!(Self::atom) >>
     trailers: fold_many0!(
       alt!(
         delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')) => { |args| Trailer::Call(args) }
@@ -404,42 +401,60 @@ named!(atom_expr<CompleteStr, Box<Expression>>,
 //       '[' [testlist_comp] ']' |
 //       '{' [dictorsetmaker] '}' |
 //       NAME | NUMBER | STRING+ | '...' | 'None' | 'True' | 'False')
-named!(atom<CompleteStr, Atom>,
-  alt!(
-    tag!("...") => { |_| Atom::Ellipsis }
-  | tag!("None") => { |_| Atom::None }
-  | tag!("True") => { |_| Atom::True }
-  | tag!("False") => { |_| Atom::False }
-  | name => { |n| Atom::Name(n) }
+named!(atom<CompleteStr, Box<Expression>>,
+  map!(alt!(
+    tag!("...") => { |_| Expression::Ellipsis }
+  | tag!("None") => { |_| Expression::None }
+  | tag!("True") => { |_| Expression::True }
+  | tag!("False") => { |_| Expression::False }
+  | name => { |n| Expression::Name(n) }
   | separated_nonempty_list!(space_sep!(), delimited!(
       char!('"'),
       escaped_transform!(call!(nom::alpha), '\\', nom::anychar),
       char!('"')
     )) => { |strings: Vec<String>|
-      Atom::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
+      Expression::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
     }
-  | ws2!(tuple!(char!('{'), char!('}'))) => { |_| Atom::DictLiteral(Vec::new()) }
-  | ws2!(delimited!(char!('{'), ws!(alt!(
-      call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker)
+  | ws2!(tuple!(char!('{'), char!('}'))) => { |_| Expression::DictLiteral(Vec::new()) }
+  | ws2!(delimited!(char!('{'), ws!(map!(
+      call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker), |e:Box<_>| *e
     )), char!('}')))
-  | ws2!(delimited!(char!('('), ws!(alt!(
+  | ws2!(delimited!(char!('('), ws!(
+      call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
+    ), char!(')'))) => { |e|
+      match e {
+          Expression::ListComp(e, comp) => Expression::Generator(e, comp),
+          Expression::ListLiteral(v) => Expression::TupleLiteral(v),
+          _ => unreachable!(),
+      }
+    }
+  | ws2!(delimited!(char!('('), ws!(
       call!(ExpressionParser::<NewlinesAreSpaces>::yield_expr)
-    | call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
-    )), char!(')'))) => { |e| Atom::Generator(e) }
-  // TODO
-  )
+    ), char!(')')))
+  | ws2!(delimited!(char!('['), ws!(
+      call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
+    ), char!(']')))
+  ), |e| Box::new(e))
 );
 
 // testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
-named!(testlist_comp<CompleteStr, Box<Expression>>,
+named!(testlist_comp<CompleteStr, Expression>,
   do_parse!(
-    first: alt!(call!(Self::test) | call!(Self::star_expr)) >>
+    first: alt!(
+        call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
+      | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
+      ) >>
     r: alt!(
-      call!(Self::comp_for) => { |comp| Box::new(Expression::Generator(first, comp)) }
-    | preceded!(char!(','), separated_list!(char!(','), alt!(call!(Self::test)|call!(Self::star_expr)))) => { |v: Vec<Box<Expression>>| {
-        let mut v2 = vec![*first];
-        v2.extend(v.into_iter().map(|e| *e));
-        Box::new(Expression::CommaSeparated(v2))
+      call!(Self::comp_for) => { |comp| Expression::ListComp(Box::new(first), comp) }
+    | preceded!(char!(','), separated_list!(char!(','),
+        alt!(
+          call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
+        | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
+        )
+      )) => { |v: Vec<SetItem>| {
+        let mut v = v;
+        v.insert(0, first);
+        Expression::ListLiteral(v)
       }}
     ) >> (
       r
@@ -498,17 +513,17 @@ impl ExpressionParser<NewlinesAreSpaces> {
 //                    (comp_for | (',' (test ':' test | '**' expr))* [','])) |
 //                   ((test | star_expr)
 //                    (comp_for | (',' (test | star_expr))* [','])) )
-named!(dictorsetmaker<CompleteStr, Atom>,
+named!(dictorsetmaker<CompleteStr, Box<Expression>>,
   ws!(alt!(
     do_parse!(
       tag!("**") >>
-      e: map!(call!(Self::expr), |e: Box<_>| DictItem::Star(*e)) >> 
+      e: map!(call!(Self::expr), |e: Box<_>| DictItem::Star(*e)) >>
       r: call!(Self::dictmaker, e) >>
       (r)
     )
   | do_parse!(
       tag!("*") >>
-      e: map!(call!(Self::expr), |e: Box<_>| SetItem::Star(*e)) >> 
+      e: map!(call!(Self::expr), |e: Box<_>| SetItem::Star(*e)) >>
       r: call!(Self::setmaker, e) >>
       (r)
     )
@@ -528,42 +543,42 @@ named!(dictorsetmaker<CompleteStr, Atom>,
   ))
 );
 
-named_args!(dictmaker(item1: DictItem) <CompleteStr, Atom>, 
+named_args!(dictmaker(item1: DictItem) <CompleteStr, Box<Expression>>,
   map!(
     opt!(alt!(
       preceded!(char!(','), separated_list!(char!(','), call!(Self::dictitem))) => { |v: Vec<_>| {
         let mut v = v;
         v.insert(0, item1.clone()); // FIXME: do not clone
-        Atom::DictLiteral(v)
+        Box::new(Expression::DictLiteral(v))
       }}
     | preceded!(peek!(tuple!(tag!("for"), call!(helpers::space_sep))), call!(Self::comp_for)) => { |comp| {
-        Atom::DictComp(Box::new(item1.clone()), comp) // FIXME: do not clone
+        Box::new(Expression::DictComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
     )),
     |rest| {
       match rest {
           Some(r) => r,
-          None => Atom::DictLiteral(vec![item1]),
+          None => Box::new(Expression::DictLiteral(vec![item1])),
       }
     }
   )
 );
 
-named_args!(setmaker(item1: SetItem) <CompleteStr, Atom>, 
+named_args!(setmaker(item1: SetItem) <CompleteStr, Box<Expression>>,
   do_parse!(
     rest:opt!(alt!(
       preceded!(char!(','), separated_list!(char!(','), call!(Self::setitem))) => { |v: Vec<_>| {
         let mut v = v;
         v.insert(0, item1.clone()); // FIXME: do not clone
-        Atom::SetLiteral(v)
+        Box::new(Expression::SetLiteral(v))
       }}
     | preceded!(peek!(tuple!(tag!("for"), call!(helpers::space_sep))), call!(Self::comp_for)) => { |comp| {
-        Atom::SetComp(Box::new(item1.clone()), comp) // FIXME: do not clone
+        Box::new(Expression::SetComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
     )) >> (
       match rest {
           Some(r) => r,
-          None => Atom::SetLiteral(vec![item1]),
+          None => Box::new(Expression::SetLiteral(vec![item1])),
       }
     )
   )
@@ -584,12 +599,12 @@ named!(setitem<CompleteStr, SetItem>,
 );
 
 } // end ExpressionParser
-  
+
 
 /*********************************************************************
  * Argument list
  *********************************************************************/
-        
+
 impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 
 // arglist: argument (',' argument)*  [',']
@@ -617,7 +632,7 @@ fn build_arglist(input: CompleteStr, args: Vec<RawArgument>) -> IResult<Complete
     }
     loop {
         match last_arg {
-            Some(RawArgument::Keyword(Expression::Atom(Atom::Name(name)), arg)) => keyword_args.push(Argument::Normal((name, arg))),
+            Some(RawArgument::Keyword(Expression::Name(name), arg)) => keyword_args.push(Argument::Normal((name, arg))),
             Some(RawArgument::Keyword(_, _arg)) => return fail(ArgumentError::KeywordExpression.into()),
             Some(RawArgument::Kwargs(kwargs)) => keyword_args.push(Argument::Star(kwargs)),
             Some(RawArgument::Positional(_)) => return fail(ArgumentError::PositionalAfterKeyword.into()),
@@ -639,7 +654,7 @@ named!(pub arglist<CompleteStr, Arglist>,
           test1: call!(Self::test) >>
           next: opt!(alt!(
             preceded!(char!('='), call!(Self::test)) => { |test2: Box<_>| RawArgument::Keyword(*test1.clone(), *test2) } // FIXME: do not clone
-          | call!(Self::comp_for) => { |v| RawArgument::Positional(Expression::Generator(test1.clone(), v)) } // FIXME: do not clone
+          | call!(Self::comp_for) => { |v| RawArgument::Positional(Expression::Generator(Box::new(SetItem::Unique(*test1.clone())), v)) } // FIXME: do not clone
           )) >> (
             match next {
                 Some(e) => e,
@@ -707,12 +722,12 @@ named_args!(comp_if(acc: Vec<ComprehensionChunk>) <CompleteStr, Vec<Comprehensio
 
 // yield_expr: 'yield' [yield_arg]
 // yield_arg: 'from' test | testlist
-named!(pub yield_expr<CompleteStr, Box<Expression>>,
+named!(pub yield_expr<CompleteStr, Expression>,
   preceded!(
     tuple!(tag!("yield"), space_sep!()),
     alt!(
-      preceded!(tuple!(tag!("from"), space_sep!()), call!(Self::test)) => { |e| Box::new(Expression::YieldFrom(e)) }
-    | call!(Self::testlist) => { |e| Box::new(Expression::Yield(e)) }
+      preceded!(tuple!(tag!("from"), space_sep!()), call!(Self::test)) => { |e| Expression::YieldFrom(e) }
+    | call!(Self::testlist) => { |e| Expression::Yield(e) }
     )
   )
 );
@@ -732,11 +747,11 @@ mod tests {
     #[test]
     fn test_atom() {
         let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
-        assert_eq!(atom(CS("foo ")), Ok((CS(" "), Atom::Name("foo".to_string()))));
-        assert_eq!(atom(CS(r#""foo" "#)), Ok((CS(" "), Atom::String("foo".to_string()))));
-        assert_eq!(atom(CS(r#""foo" "bar""#)), Ok((CS(""), Atom::String("foobar".to_string()))));
-        assert_eq!(atom(CS(r#""fo\"o" "#)), Ok((CS(" "), Atom::String("fo\"o".to_string()))));
-        assert_eq!(atom(CS(r#""fo"o" "#)), Ok((CS(r#"o" "#), Atom::String("fo".to_string()))));
+        assert_eq!(atom(CS("foo ")), Ok((CS(" "), Box::new(Expression::Name("foo".to_string())))));
+        assert_eq!(atom(CS(r#""foo" "#)), Ok((CS(" "), Box::new(Expression::String("foo".to_string())))));
+        assert_eq!(atom(CS(r#""foo" "bar""#)), Ok((CS(""), Box::new(Expression::String("foobar".to_string())))));
+        assert_eq!(atom(CS(r#""fo\"o" "#)), Ok((CS(" "), Box::new(Expression::String("fo\"o".to_string())))));
+        assert_eq!(atom(CS(r#""fo"o" "#)), Ok((CS(r#"o" "#), Box::new(Expression::String("fo".to_string())))));
     }
 
     #[test]
@@ -744,9 +759,9 @@ mod tests {
         let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
         assert_eq!(test(CS("foo if bar else baz")), Ok((CS(""),
             Box::new(Expression::Ternary(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
-                Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Name("bar".to_string())),
+                Box::new(Expression::Name("baz".to_string())),
             ))
         )));
     }
@@ -757,25 +772,25 @@ mod tests {
         assert_eq!(expr(CS("foo & bar | baz ^ qux")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::BitOr,
                 Box::new(Expression::Bop(Bop::BitAnd,
-                    Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                    Box::new(Expression::Name("foo".to_string())),
+                    Box::new(Expression::Name("bar".to_string())),
                 )),
                 Box::new(Expression::Bop(Bop::BitXor,
-                    Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
-                    Box::new(Expression::Atom(Atom::Name("qux".to_string()))),
+                    Box::new(Expression::Name("baz".to_string())),
+                    Box::new(Expression::Name("qux".to_string())),
                 )),
             ))
         )));
 
         assert_eq!(expr(CS("foo | bar & baz ^ qux")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::BitOr,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Box::new(Expression::Bop(Bop::BitXor,
                     Box::new(Expression::Bop(Bop::BitAnd,
-                        Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
-                        Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                        Box::new(Expression::Name("bar".to_string())),
+                        Box::new(Expression::Name("baz".to_string())),
                     )),
-                    Box::new(Expression::Atom(Atom::Name("qux".to_string()))),
+                    Box::new(Expression::Name("qux".to_string())),
                 )),
             ))
         )));
@@ -786,15 +801,15 @@ mod tests {
         let shift_expr = ExpressionParser::<NewlinesAreNotSpaces>::shift_expr;
         assert_eq!(shift_expr(CS("foo << bar")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Lshift,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Name("bar".to_string())),
             ))
         )));
 
         assert_eq!(shift_expr(CS("foo >> bar")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Rshift,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Name("bar".to_string())),
             ))
         )));
     }
@@ -804,27 +819,27 @@ mod tests {
         let arith_expr = ExpressionParser::<NewlinesAreNotSpaces>::arith_expr;
         assert_eq!(arith_expr(CS("foo + bar")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Add,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Name("bar".to_string())),
             ))
         )));
 
         assert_eq!(arith_expr(CS("foo * bar + baz")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Add,
                 Box::new(Expression::Bop(Bop::Mult,
-                    Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                    Box::new(Expression::Name("foo".to_string())),
+                    Box::new(Expression::Name("bar".to_string())),
                 )),
-                Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                Box::new(Expression::Name("baz".to_string())),
             ))
         )));
 
         assert_eq!(arith_expr(CS("foo + bar * baz")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Add,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Box::new(Expression::Bop(Bop::Mult,
-                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
-                    Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                    Box::new(Expression::Name("bar".to_string())),
+                    Box::new(Expression::Name("baz".to_string())),
                 )),
             ))
         )));
@@ -835,27 +850,27 @@ mod tests {
         let term = ExpressionParser::<NewlinesAreNotSpaces>::term;
         assert_eq!(term(CS("foo * bar")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Mult,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Name("bar".to_string())),
             ))
         )));
 
         assert_eq!(term(CS("foo ** bar * baz")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Mult,
                 Box::new(Expression::Bop(Bop::Power,
-                    Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                    Box::new(Expression::Name("foo".to_string())),
+                    Box::new(Expression::Name("bar".to_string())),
                 )),
-                Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                Box::new(Expression::Name("baz".to_string())),
             ))
         )));
 
         assert_eq!(term(CS("foo * bar ** baz")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Mult,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Box::new(Expression::Bop(Bop::Power,
-                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
-                    Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
+                    Box::new(Expression::Name("bar".to_string())),
+                    Box::new(Expression::Name("baz".to_string())),
                 )),
             ))
         )));
@@ -866,16 +881,16 @@ mod tests {
         let factor = ExpressionParser::<NewlinesAreNotSpaces>::factor;
         assert_eq!(factor(CS("foo ** bar")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Power,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
-                Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Name("bar".to_string())),
             ))
         )));
 
         assert_eq!(factor(CS("foo ** + bar")), Ok((CS(""),
             Box::new(Expression::Bop(Bop::Power,
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Box::new(Expression::Uop(Uop::Plus,
-                    Box::new(Expression::Atom(Atom::Name("bar".to_string()))),
+                    Box::new(Expression::Name("bar".to_string())),
                 )),
             ))
         )));
@@ -886,7 +901,7 @@ mod tests {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_eq!(atom_expr(CS("foo()")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                     ],
@@ -902,11 +917,11 @@ mod tests {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_eq!(atom_expr(CS("foo(bar)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("bar".to_string()))
+                            Expression::Name("bar".to_string())
                         ),
                     ],
                     keyword_args: vec![
@@ -917,14 +932,14 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar, baz)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("bar".to_string()))
+                            Expression::Name("bar".to_string())
                         ),
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("baz".to_string()))
+                            Expression::Name("baz".to_string())
                         ),
                     ],
                     keyword_args: vec![
@@ -935,17 +950,17 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar, baz, *qux)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("bar".to_string()))
+                            Expression::Name("bar".to_string())
                         ),
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("baz".to_string()))
+                            Expression::Name("baz".to_string())
                         ),
                         Argument::Star(
-                            Expression::Atom(Atom::Name("qux".to_string()))
+                            Expression::Name("qux".to_string())
                         ),
                     ],
                     keyword_args: vec![
@@ -956,17 +971,17 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar, *baz, qux)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("bar".to_string()))
+                            Expression::Name("bar".to_string())
                         ),
                         Argument::Star(
-                            Expression::Atom(Atom::Name("baz".to_string()))
+                            Expression::Name("baz".to_string())
                         ),
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("qux".to_string()))
+                            Expression::Name("qux".to_string())
                         ),
                     ],
                     keyword_args: vec![
@@ -977,17 +992,17 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar, *baz, *qux)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("bar".to_string()))
+                            Expression::Name("bar".to_string())
                         ),
                         Argument::Star(
-                            Expression::Atom(Atom::Name("baz".to_string()))
+                            Expression::Name("baz".to_string())
                         ),
                         Argument::Star(
-                            Expression::Atom(Atom::Name("qux".to_string()))
+                            Expression::Name("qux".to_string())
                         ),
                     ],
                     keyword_args: vec![
@@ -1002,13 +1017,13 @@ mod tests {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_eq!(atom_expr(CS("foo(bar1=bar2)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                     ],
                     keyword_args: vec![
                         Argument::Normal(
-                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                            ("bar1".to_string(), Expression::Name("bar2".to_string())),
                         ),
                     ],
                 },
@@ -1017,16 +1032,16 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar1=bar2, baz1=baz2)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                     ],
                     keyword_args: vec![
                         Argument::Normal(
-                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                            ("bar1".to_string(), Expression::Name("bar2".to_string())),
                         ),
                         Argument::Normal(
-                            ("baz1".to_string(), Expression::Atom(Atom::Name("baz2".to_string()))),
+                            ("baz1".to_string(), Expression::Name("baz2".to_string())),
                         ),
                     ],
                 },
@@ -1035,19 +1050,19 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar1=bar2, baz1=baz2, qux1=qux2)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                     ],
                     keyword_args: vec![
                         Argument::Normal(
-                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                            ("bar1".to_string(), Expression::Name("bar2".to_string())),
                         ),
                         Argument::Normal(
-                            ("baz1".to_string(), Expression::Atom(Atom::Name("baz2".to_string()))),
+                            ("baz1".to_string(), Expression::Name("baz2".to_string())),
                         ),
                         Argument::Normal(
-                            ("qux1".to_string(), Expression::Atom(Atom::Name("qux2".to_string()))),
+                            ("qux1".to_string(), Expression::Name("qux2".to_string())),
                         ),
                     ],
                 },
@@ -1056,19 +1071,19 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar1=bar2, baz1=baz2, **qux)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                     ],
                     keyword_args: vec![
                         Argument::Normal(
-                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                            ("bar1".to_string(), Expression::Name("bar2".to_string())),
                         ),
                         Argument::Normal(
-                            ("baz1".to_string(), Expression::Atom(Atom::Name("baz2".to_string()))),
+                            ("baz1".to_string(), Expression::Name("baz2".to_string())),
                         ),
                         Argument::Star(
-                            Expression::Atom(Atom::Name("qux".to_string())),
+                            Expression::Name("qux".to_string()),
                         ),
                     ],
                 },
@@ -1077,19 +1092,19 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar1=bar2, **baz, **qux)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                     ],
                     keyword_args: vec![
                         Argument::Normal(
-                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                            ("bar1".to_string(), Expression::Name("bar2".to_string())),
                         ),
                         Argument::Star(
-                            Expression::Atom(Atom::Name("baz".to_string())),
+                            Expression::Name("baz".to_string()),
                         ),
                         Argument::Star(
-                            Expression::Atom(Atom::Name("qux".to_string())),
+                            Expression::Name("qux".to_string()),
                         ),
                     ],
                 },
@@ -1098,19 +1113,19 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo(bar1=bar2, **baz, qux1=qux2)")), Ok((CS(""),
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                     ],
                     keyword_args: vec![
                         Argument::Normal(
-                            ("bar1".to_string(), Expression::Atom(Atom::Name("bar2".to_string()))),
+                            ("bar1".to_string(), Expression::Name("bar2".to_string())),
                         ),
                         Argument::Star(
-                            Expression::Atom(Atom::Name("baz".to_string())),
+                            Expression::Name("baz".to_string()),
                         ),
                         Argument::Normal(
-                            ("qux1".to_string(), Expression::Atom(Atom::Name("qux2".to_string()))),
+                            ("qux1".to_string(), Expression::Name("qux2".to_string())),
                         ),
                     ],
                 },
@@ -1157,10 +1172,10 @@ mod tests {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_eq!(atom_expr(CS("foo[bar]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Simple(
-                        Expression::Atom(Atom::Name("bar".to_string())),
+                        Expression::Name("bar".to_string()),
                     )
                 ],
             ))
@@ -1172,11 +1187,11 @@ mod tests {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_eq!(atom_expr(CS("foo[bar:baz]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Double(
-                        Some(Expression::Atom(Atom::Name("bar".to_string()))),
-                        Some(Expression::Atom(Atom::Name("baz".to_string()))),
+                        Some(Expression::Name("bar".to_string())),
+                        Some(Expression::Name("baz".to_string())),
                     )
                 ],
             ))
@@ -1184,10 +1199,10 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo[bar:]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Double(
-                        Some(Expression::Atom(Atom::Name("bar".to_string()))),
+                        Some(Expression::Name("bar".to_string())),
                         None,
                     )
                 ],
@@ -1196,11 +1211,11 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo[:baz]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Double(
                         None,
-                        Some(Expression::Atom(Atom::Name("baz".to_string()))),
+                        Some(Expression::Name("baz".to_string())),
                     )
                 ],
             ))
@@ -1208,7 +1223,7 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo[:]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Double(
                         None,
@@ -1224,12 +1239,12 @@ mod tests {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_eq!(atom_expr(CS("foo[bar:baz:qux]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Triple(
-                        Some(Expression::Atom(Atom::Name("bar".to_string()))),
-                        Some(Expression::Atom(Atom::Name("baz".to_string()))),
-                        Some(Expression::Atom(Atom::Name("qux".to_string()))),
+                        Some(Expression::Name("bar".to_string())),
+                        Some(Expression::Name("baz".to_string())),
+                        Some(Expression::Name("qux".to_string())),
                     )
                 ],
             ))
@@ -1237,12 +1252,12 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo[bar::qux]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Triple(
-                        Some(Expression::Atom(Atom::Name("bar".to_string()))),
+                        Some(Expression::Name("bar".to_string())),
                         None,
-                        Some(Expression::Atom(Atom::Name("qux".to_string()))),
+                        Some(Expression::Name("qux".to_string())),
                     )
                 ],
             ))
@@ -1250,10 +1265,10 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo[bar::]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Triple(
-                        Some(Expression::Atom(Atom::Name("bar".to_string()))),
+                        Some(Expression::Name("bar".to_string())),
                         None,
                         None,
                     )
@@ -1263,12 +1278,12 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo[:baz:qux]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Triple(
                         None,
-                        Some(Expression::Atom(Atom::Name("baz".to_string()))),
-                        Some(Expression::Atom(Atom::Name("qux".to_string()))),
+                        Some(Expression::Name("baz".to_string())),
+                        Some(Expression::Name("qux".to_string())),
                     )
                 ],
             ))
@@ -1276,11 +1291,11 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo[:baz:]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Triple(
                         None,
-                        Some(Expression::Atom(Atom::Name("baz".to_string()))),
+                        Some(Expression::Name("baz".to_string())),
                         None,
                     )
                 ],
@@ -1289,7 +1304,7 @@ mod tests {
 
         assert_eq!(atom_expr(CS("foo[::]")), Ok((CS(""),
             Box::new(Expression::Subscript(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 vec![
                     Subscript::Triple(
                         None,
@@ -1306,7 +1321,7 @@ mod tests {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_eq!(atom_expr(CS("foo.bar")), Ok((CS(""),
             Box::new(Expression::Attribute(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 "bar".to_string(),
             ))
         )));
@@ -1318,12 +1333,12 @@ mod tests {
         assert_eq!(atom_expr(CS("foo.bar[baz]")), Ok((CS(""),
             Box::new(Expression::Subscript(
                 Box::new(Expression::Attribute(
-                    Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                    Box::new(Expression::Name("foo".to_string())),
                     "bar".to_string(),
                 )),
                 vec![
                     Subscript::Simple(
-                        Expression::Atom(Atom::Name("baz".to_string())),
+                        Expression::Name("baz".to_string()),
                     )
                 ],
             ))
@@ -1335,16 +1350,16 @@ mod tests {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         let ast =
             Box::new(Expression::Call(
-                Box::new(Expression::Atom(Atom::Name("foo".to_string()))),
+                Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
                         Argument::Normal(
-                            Expression::Atom(Atom::Name("bar".to_string()))
+                            Expression::Name("bar".to_string())
                         ),
                         Argument::Normal(
                             Expression::Bop(Bop::Add,
-                                Box::new(Expression::Atom(Atom::Name("baz".to_string()))),
-                                Box::new(Expression::Atom(Atom::Name("qux".to_string()))),
+                                Box::new(Expression::Name("baz".to_string())),
+                                Box::new(Expression::Name("qux".to_string())),
                             ),
                         ),
                     ],
@@ -1367,25 +1382,25 @@ mod tests {
         let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
 
         assert_eq!(atom(CS("{foo}")), Ok((CS(""),
-            Atom::SetLiteral(vec![
-                SetItem::Unique(Expression::Atom(Atom::Name("foo".to_string()))),
-            ])
+            Box::new(Expression::SetLiteral(vec![
+                SetItem::Unique(Expression::Name("foo".to_string())),
+            ]))
         )));
 
         assert_eq!(atom(CS("{foo, bar, baz}")), Ok((CS(""),
-            Atom::SetLiteral(vec![
-                SetItem::Unique(Expression::Atom(Atom::Name("foo".to_string()))),
-                SetItem::Unique(Expression::Atom(Atom::Name("bar".to_string()))),
-                SetItem::Unique(Expression::Atom(Atom::Name("baz".to_string()))),
-            ])
+            Box::new(Expression::SetLiteral(vec![
+                SetItem::Unique(Expression::Name("foo".to_string())),
+                SetItem::Unique(Expression::Name("bar".to_string())),
+                SetItem::Unique(Expression::Name("baz".to_string())),
+            ]))
         )));
 
         assert_eq!(atom(CS("{foo, *bar, baz}")), Ok((CS(""),
-            Atom::SetLiteral(vec![
-                SetItem::Unique(Expression::Atom(Atom::Name("foo".to_string()))),
-                SetItem::Star(Expression::Atom(Atom::Name("bar".to_string()))),
-                SetItem::Unique(Expression::Atom(Atom::Name("baz".to_string()))),
-            ])
+            Box::new(Expression::SetLiteral(vec![
+                SetItem::Unique(Expression::Name("foo".to_string())),
+                SetItem::Star(Expression::Name("bar".to_string())),
+                SetItem::Unique(Expression::Name("baz".to_string())),
+            ]))
         )));
     }
 
@@ -1393,50 +1408,50 @@ mod tests {
     fn test_dictlit() {
         let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
 
-        assert_eq!(atom(CS("{}")), Ok((CS(""),
-            Atom::DictLiteral(vec![
+        assert_eq!(atom(CS("{}")), Ok((CS(""), Box::new(
+            Expression::DictLiteral(vec![
             ])
-        )));
+        ))));
 
-        assert_eq!(atom(CS("{foo1:foo2}")), Ok((CS(""),
-            Atom::DictLiteral(vec![
+        assert_eq!(atom(CS("{foo1:foo2}")), Ok((CS(""), Box::new(
+            Expression::DictLiteral(vec![
                 DictItem::Unique(
-                    Expression::Atom(Atom::Name("foo1".to_string())),
-                    Expression::Atom(Atom::Name("foo2".to_string())),
+                    Expression::Name("foo1".to_string()),
+                    Expression::Name("foo2".to_string()),
                 ),
             ])
-        )));
+        ))));
 
-        assert_eq!(atom(CS("{foo1:foo2, bar1:bar2, baz1:baz2}")), Ok((CS(""),
-            Atom::DictLiteral(vec![
+        assert_eq!(atom(CS("{foo1:foo2, bar1:bar2, baz1:baz2}")), Ok((CS(""), Box::new(
+            Expression::DictLiteral(vec![
                 DictItem::Unique(
-                    Expression::Atom(Atom::Name("foo1".to_string())),
-                    Expression::Atom(Atom::Name("foo2".to_string())),
+                    Expression::Name("foo1".to_string()),
+                    Expression::Name("foo2".to_string()),
                 ),
                 DictItem::Unique(
-                    Expression::Atom(Atom::Name("bar1".to_string())),
-                    Expression::Atom(Atom::Name("bar2".to_string())),
+                    Expression::Name("bar1".to_string()),
+                    Expression::Name("bar2".to_string()),
                 ),
                 DictItem::Unique(
-                    Expression::Atom(Atom::Name("baz1".to_string())),
-                    Expression::Atom(Atom::Name("baz2".to_string())),
+                    Expression::Name("baz1".to_string()),
+                    Expression::Name("baz2".to_string()),
                 ),
             ])
-        )));
+        ))));
 
-        assert_eq!(atom(CS("{foo1:foo2, **bar, baz1:baz2}")), Ok((CS(""),
-            Atom::DictLiteral(vec![
+        assert_eq!(atom(CS("{foo1:foo2, **bar, baz1:baz2}")), Ok((CS(""), Box::new(
+            Expression::DictLiteral(vec![
                 DictItem::Unique(
-                    Expression::Atom(Atom::Name("foo1".to_string())),
-                    Expression::Atom(Atom::Name("foo2".to_string())),
+                    Expression::Name("foo1".to_string()),
+                    Expression::Name("foo2".to_string()),
                 ),
-                DictItem::Star(Expression::Atom(Atom::Name("bar".to_string()))),
+                DictItem::Star(Expression::Name("bar".to_string())),
                 DictItem::Unique(
-                    Expression::Atom(Atom::Name("baz1".to_string())),
-                    Expression::Atom(Atom::Name("baz2".to_string())),
+                    Expression::Name("baz1".to_string()),
+                    Expression::Name("baz2".to_string()),
                 ),
             ])
-        )));
+        ))));
     }
 
     #[test]
@@ -1447,9 +1462,9 @@ mod tests {
             ComprehensionChunk::For {
                 async: false,
                 item: vec![
-                    Expression::Atom(Atom::Name("bar".to_string())),
+                    Expression::Name("bar".to_string()),
                 ],
-                iterator: Expression::Atom(Atom::Name("baz".to_string())),
+                iterator: Expression::Name("baz".to_string()),
             },
         ])));
 
@@ -1459,20 +1474,20 @@ mod tests {
     fn test_setcomp() {
         let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
 
-        assert_eq!(atom(CS("{foo for bar in baz}")), Ok((CS(""),
-            Atom::SetComp(
-                Box::new(SetItem::Unique(Expression::Atom(Atom::Name("foo".to_string())))),
+        assert_eq!(atom(CS("{foo for bar in baz}")), Ok((CS(""), Box::new(
+            Expression::SetComp(
+                Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
                 vec![
                     ComprehensionChunk::For {
                         async: false,
                         item: vec![
-                            Expression::Atom(Atom::Name("bar".to_string())),
+                            Expression::Name("bar".to_string()),
                         ],
-                        iterator: Expression::Atom(Atom::Name("baz".to_string())),
+                        iterator: Expression::Name("baz".to_string()),
                     },
                 ]
             )
-        )));
+        ))));
     }
 
 }

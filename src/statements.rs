@@ -165,7 +165,7 @@ named!(expr_stmt<CompleteStr, Statement>,
       // Case 1: foo = bar
       do_parse!(
         rhs: many1!(ws2!(preceded!(char!('='), alt!(
-          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e:Box<_>| vec![*e] }
+          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
         | testlist_star_expr
         )))) >> (
           Statement::Assignment(lhs.clone(), rhs)
@@ -186,7 +186,7 @@ named!(expr_stmt<CompleteStr, Statement>,
     | do_parse!(
         op: augassign >>
         rhs: alt!(
-          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e:Box<_>| vec![*e] }
+          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
         | call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist)
         ) >> (
           Statement::AugmentedAssignment(lhs, op, rhs)
@@ -616,7 +616,6 @@ named_args!(with_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 mod tests {
     use super::*;
     use nom::types::CompleteStr as CS;
-    use expressions::Atom;
 
     #[test]
     fn test_statement_indent() {
@@ -854,8 +853,8 @@ mod tests {
         assert_eq!(compound_stmt(CS("for foo in bar:\n del baz"), 0, 0), Ok((CS(""),
             CompoundStatement::For {
                 async: false,
-                item: vec![Expression::Atom(Atom::Name("foo".to_string()))],
-                iterator: vec![Expression::Atom(Atom::Name("bar".to_string()))],
+                item: vec![Expression::Name("foo".to_string())],
+                iterator: vec![Expression::Name("bar".to_string())],
                 for_block: vec![
                     Statement::Del(vec!["baz".to_string()])
                 ],
@@ -869,8 +868,8 @@ mod tests {
         assert_eq!(compound_stmt(CS("for foo in bar:\n del baz\nelse:\n del qux"), 0, 0), Ok((CS(""),
             CompoundStatement::For {
                 async: false,
-                item: vec![Expression::Atom(Atom::Name("foo".to_string()))],
-                iterator: vec![Expression::Atom(Atom::Name("bar".to_string()))],
+                item: vec![Expression::Name("foo".to_string())],
+                iterator: vec![Expression::Name("bar".to_string())],
                 for_block: vec![
                     Statement::Del(vec!["baz".to_string()])
                 ],
@@ -885,37 +884,34 @@ mod tests {
 
     #[test]
     fn test_raise() {
-        use expressions::Atom;
         assert_eq!(small_stmt(CS("raise")), Ok((CS(""),
             Statement::Raise
         )));
 
         assert_eq!(small_stmt(CS("raise exc")), Ok((CS(""),
             Statement::RaiseExc(
-                Expression::Atom(Atom::Name("exc".to_string())),
+                Expression::Name("exc".to_string()),
             )
         )));
 
         assert_eq!(small_stmt(CS("raise exc from exc2")), Ok((CS(""),
             Statement::RaiseExcFrom(
-                Expression::Atom(Atom::Name("exc".to_string())),
-                Expression::Atom(Atom::Name("exc2".to_string())),
+                Expression::Name("exc".to_string()),
+                Expression::Name("exc2".to_string()),
             )
         )));
     }
 
     #[test]
     fn test_assign() {
-        use expressions::Atom;
-
         assert_eq!(small_stmt(CS("foo = bar")), Ok((CS(""),
             Statement::Assignment(
                 vec![
-                    Expression::Atom(Atom::Name("foo".to_string())),
+                    Expression::Name("foo".to_string()),
                 ],
                 vec![
                     vec![
-                        Expression::Atom(Atom::Name("bar".to_string())),
+                        Expression::Name("bar".to_string()),
                     ],
                 ],
             )
@@ -924,14 +920,14 @@ mod tests {
         assert_eq!(small_stmt(CS("foo = bar = baz")), Ok((CS(""),
             Statement::Assignment(
                 vec![
-                    Expression::Atom(Atom::Name("foo".to_string())),
+                    Expression::Name("foo".to_string()),
                 ],
                 vec![
                     vec![
-                        Expression::Atom(Atom::Name("bar".to_string())),
+                        Expression::Name("bar".to_string()),
                     ],
                     vec![
-                        Expression::Atom(Atom::Name("baz".to_string())),
+                        Expression::Name("baz".to_string()),
                     ],
                 ],
             )
@@ -940,16 +936,14 @@ mod tests {
 
     #[test]
     fn test_augassign() {
-        use expressions::Atom;
-
         assert_eq!(small_stmt(CS("foo:bar = baz")), Ok((CS(""),
             Statement::TypedAssignment(
                 vec![
-                    Expression::Atom(Atom::Name("foo".to_string())),
+                    Expression::Name("foo".to_string()),
                 ],
-                Expression::Atom(Atom::Name("bar".to_string())),
+                Expression::Name("bar".to_string()),
                 vec![
-                    Expression::Atom(Atom::Name("baz".to_string())),
+                    Expression::Name("baz".to_string()),
                 ],
             )
         )));
@@ -957,18 +951,16 @@ mod tests {
 
     #[test]
     fn test_unpack_assign() {
-        use expressions::Atom;
-
         assert_eq!(small_stmt(CS("foo, bar = baz, qux")), Ok((CS(""),
             Statement::Assignment(
                 vec![
-                    Expression::Atom(Atom::Name("foo".to_string())),
-                    Expression::Atom(Atom::Name("bar".to_string())),
+                    Expression::Name("foo".to_string()),
+                    Expression::Name("bar".to_string()),
                 ],
                 vec![
                     vec![
-                        Expression::Atom(Atom::Name("baz".to_string())),
-                        Expression::Atom(Atom::Name("qux".to_string())),
+                        Expression::Name("baz".to_string()),
+                        Expression::Name("qux".to_string()),
                     ],
                 ],
             )
@@ -977,14 +969,14 @@ mod tests {
         assert_eq!(small_stmt(CS("foo = bar = baz")), Ok((CS(""),
             Statement::Assignment(
                 vec![
-                    Expression::Atom(Atom::Name("foo".to_string())),
+                    Expression::Name("foo".to_string()),
                 ],
                 vec![
                     vec![
-                        Expression::Atom(Atom::Name("bar".to_string())),
+                        Expression::Name("bar".to_string()),
                     ],
                     vec![
-                        Expression::Atom(Atom::Name("baz".to_string())),
+                        Expression::Name("baz".to_string()),
                     ],
                 ],
             )
@@ -993,12 +985,10 @@ mod tests {
 
     #[test]
     fn test_with() {
-        use expressions::Atom;
-
         assert_eq!(with_stmt(CS("with foo:\n del bar"), 0), Ok((CS(""),
             CompoundStatement::With(
                 vec![
-                    (Expression::Atom(Atom::Name("foo".to_string())), None),
+                    (Expression::Name("foo".to_string()), None),
                 ],
                 vec![
                     Statement::Del(vec!["bar".to_string()])
@@ -1009,7 +999,7 @@ mod tests {
         assert_eq!(with_stmt(CS("with foo as bar:\n del baz"), 0), Ok((CS(""),
             CompoundStatement::With(
                 vec![
-                    (Expression::Atom(Atom::Name("foo".to_string())), Some(Expression::Atom(Atom::Name("bar".to_string())))),
+                    (Expression::Name("foo".to_string()), Some(Expression::Name("bar".to_string()))),
                 ],
                 vec![
                     Statement::Del(vec!["baz".to_string()])
@@ -1020,8 +1010,6 @@ mod tests {
 
     #[test]
     fn test_try() {
-        use expressions::Atom;
-
         assert_eq!(try_stmt(CS("try:\n del foo\nexcept Bar:\n del baz"), 0), Ok((CS(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
@@ -1029,7 +1017,7 @@ mod tests {
                 ],
                 except_clauses: vec![
                     (
-                        Expression::Atom(Atom::Name("Bar".to_string())),
+                        Expression::Name("Bar".to_string()),
                         None,
                         vec![Statement::Del(vec!["baz".to_string()])],
                     ),

@@ -319,7 +319,7 @@ pub(crate) fn varargslist(i: CompleteStr) -> IResult<CompleteStr, UntypedArgsLis
 mod tests {
     use super::*;
     use nom::types::CompleteStr as CS;
-    use expressions::{Argument, Atom};
+    use expressions::Argument;
     use statements::Statement;
 
     #[test]
@@ -341,7 +341,7 @@ mod tests {
             Decorator {
                 name: vec!["foo".to_string()],
                 args: Some(Arglist {
-                    positional_args: vec![Argument::Normal(Expression::Atom(Atom::Name("baz".to_string())))],
+                    positional_args: vec![Argument::Normal(Expression::Name("baz".to_string()))],
                     keyword_args: Vec::new(),
                 })
             }
@@ -350,7 +350,7 @@ mod tests {
             Decorator {
                 name: vec!["foo".to_string(), "bar".to_string()],
                 args: Some(Arglist {
-                    positional_args: vec![Argument::Normal(Expression::Atom(Atom::Name("baz".to_string())))],
+                    positional_args: vec![Argument::Normal(Expression::Name("baz".to_string()))],
                     keyword_args: Vec::new(),
                 })
             }
@@ -366,7 +366,7 @@ mod tests {
                 name: "foo".to_string(),
                 parameters: TypedArgsList::default(),
                 return_type: None,
-                code: vec![Statement::Expressions(vec![Expression::Atom(Atom::Name("bar".to_string()))])],
+                code: vec![Statement::Expressions(vec![Expression::Name("bar".to_string())])],
             })
         )));
 
@@ -377,7 +377,7 @@ mod tests {
                 name: "foo".to_string(),
                 parameters: TypedArgsList::default(),
                 return_type: None,
-                code: vec![Statement::Expressions(vec![Expression::Atom(Atom::Name("bar".to_string()))])],
+                code: vec![Statement::Expressions(vec![Expression::Name("bar".to_string())])],
             })
         )));
 
@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(ParamlistParser::<Typed>::parse(CS("foo=bar")), Ok((CS(""),
             TypedArgsList {
                 positional_args: vec![
-                    ("foo".to_string(), None, Some(Expression::Atom(Atom::Name("bar".to_string())))),
+                    ("foo".to_string(), None, Some(Expression::Name("bar".to_string()))),
                 ],
                 star_args: StarParams::No,
                 keyword_args: vec![],
@@ -422,7 +422,7 @@ mod tests {
         assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo=bar")), Ok((CS(""),
             UntypedArgsList {
                 positional_args: vec![
-                    ("foo".to_string(), Some(Expression::Atom(Atom::Name("bar".to_string())))),
+                    ("foo".to_string(), Some(Expression::Name("bar".to_string()))),
                 ],
                 star_args: StarParams::No,
                 keyword_args: vec![],
@@ -433,7 +433,7 @@ mod tests {
         assert_eq!(ParamlistParser::<Typed>::parse(CS("foo:bar")), Ok((CS(""),
             TypedArgsList {
                 positional_args: vec![
-                    ("foo".to_string(), Some(Expression::Atom(Atom::Name("bar".to_string()))), None),
+                    ("foo".to_string(), Some(Expression::Name("bar".to_string())), None),
                 ],
                 star_args: StarParams::No,
                 keyword_args: vec![],
@@ -455,7 +455,7 @@ mod tests {
         assert_eq!(ParamlistParser::<Typed>::parse(CS("foo:bar=baz")), Ok((CS(""),
             TypedArgsList {
                 positional_args: vec![
-                    ("foo".to_string(), Some(Expression::Atom(Atom::Name("bar".to_string()))), Some(Expression::Atom(Atom::Name("baz".to_string())))),
+                    ("foo".to_string(), Some(Expression::Name("bar".to_string())), Some(Expression::Name("baz".to_string()))),
                 ],
                 star_args: StarParams::No,
                 keyword_args: vec![],
@@ -534,7 +534,7 @@ mod tests {
                 ],
                 star_args: StarParams::Anonymous,
                 keyword_args: vec![
-                    ("bar".to_string(), None, Some(Expression::Atom(Atom::Name("baz".to_string())))),
+                    ("bar".to_string(), None, Some(Expression::Name("baz".to_string()))),
                 ],
                 star_kwargs: None,
             }
@@ -547,7 +547,7 @@ mod tests {
                 ],
                 star_args: StarParams::Anonymous,
                 keyword_args: vec![
-                    ("bar".to_string(), Some(Expression::Atom(Atom::Name("baz".to_string())))),
+                    ("bar".to_string(), Some(Expression::Name("baz".to_string()))),
                 ],
                 star_kwargs: None,
             }
