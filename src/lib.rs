@@ -14,7 +14,6 @@ mod expressions;
 mod statements;
 
 use helpers::*;
-use expressions::*;
 use statements::*;
 
 // single_input: NEWLINE | simple_stmt | compound_stmt NEWLINE

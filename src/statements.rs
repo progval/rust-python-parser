@@ -1,7 +1,9 @@
+use std::marker::PhantomData;
+
 use nom::types::CompleteStr;
 
 use helpers::*;
-use expressions::{Expression, possibly_empty_testlist, test, yield_expr};
+use expressions::{Expression, ExpressionParser};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Import {
@@ -35,7 +37,7 @@ pub enum Statement {
     Nonlocal(Vec<Name>),
     Assert(Expression, Option<Expression>),
     Import(Import),
-    Expression(Expression),
+    Expressions(Vec<Expression>),
     // TODO
 
     Compound(Box<CompoundStatement>),
@@ -50,6 +52,10 @@ pub enum CompoundStatement {
 }
 
 
+macro_rules! call_test {
+    ( $i:expr, $($args:tt)* ) => { call!($i, ExpressionParser::<NewlinesAreNotSpaces>::test, $($args)*) }
+}
+
 /*********************************************************************
  * Base statement parsers
  *********************************************************************/
@@ -57,8 +63,8 @@ pub enum CompoundStatement {
 // stmt: simple_stmt | compound_stmt
 named_args!(pub statement(first_indent: usize, indent: usize) <CompleteStr, Vec<Statement>>,
   alt!(
-    call!(simple_stmt, first_indent)
-  | call!(compound_stmt, first_indent, indent) => { |stmt| vec![Statement::Compound(Box::new(stmt))] }
+    call!(compound_stmt, first_indent, indent) => { |stmt| vec![Statement::Compound(Box::new(stmt))] }
+  | call!(simple_stmt, first_indent)
   )
 );
 
@@ -129,9 +135,13 @@ named!(flow_stmt<CompleteStr, Statement>,
   alt!(
     tag!("break") => { |_| Statement::Break }
   | tag!("continue") => { |_| Statement::Continue }
-  | preceded!(tuple!(tag!("return"), space_sep2), ws2!(possibly_empty_testlist)) => { |e| Statement::Return(e) }
-  | yield_expr => { |e: Box<_>| Statement::Expression(*e) }
+  | preceded!(
+      tuple!(tag!("return"), space_sep2),
+      ws2!(call!(ExpressionParser::<NewlinesAreNotSpaces>::possibly_empty_testlist))
+    ) => { |e| Statement::Return(e) }
   | raise_stmt
+  | call!(ExpressionParser::<NewlinesAreNotSpaces>::possibly_empty_testlist)
+    => { |e| Statement::Expressions(e) }
   )
 );
 
@@ -140,8 +150,8 @@ named!(raise_stmt<CompleteStr, Statement>,
   do_parse!(
     tag!("raise") >>
     t: opt!(tuple!(
-      preceded!(space_sep2, test),
-      opt!(preceded!(tuple!(space_sep2, tag!("from"), space_sep2), test))
+      preceded!(space_sep2, call_test!()),
+      opt!(preceded!(tuple!(space_sep2, tag!("from"), space_sep2), call_test!()))
     )) >> (
       match t {
         Some((exc, Some(from_exc))) => Statement::RaiseExcFrom(*exc, *from_exc),
@@ -171,8 +181,8 @@ named!(assert_stmt<CompleteStr, Statement>,
   do_parse!(
     tag!("assert") >>
     space_sep2 >>
-    assertion: test >>
-    msg: opt!(preceded!(ws2!(char!(',')), test)) >> (
+    assertion: call_test!() >>
+    msg: opt!(preceded!(ws2!(char!(',')), call_test!())) >> (
       Statement::Assert(*assertion, msg.map(|m| *m))
     )
   )
@@ -192,7 +202,7 @@ named!(import_stmt<CompleteStr, Statement>,
 
 // import_name: 'import' dotted_as_names
 named!(import_name<CompleteStr, Import>,
-  map!(preceded!(tuple!(tag!("import"), space_sep2), dotted_as_names),
+  map!(preceded!(tuple!(tag!("import"), space_sep2), call!(ImportParser::<NewlinesAreNotSpaces>::dotted_as_names)),
     |names| Import::Import { names }
   )
 );
@@ -209,19 +219,19 @@ named!(import_from<CompleteStr, Import>,
     import_from: alt!(
       preceded!(char!('.'), do_parse!(
         leading_dots: ws2!(map!(many0!(char!('.')), |dots| dots.len()+1)) >>
-        from_name: opt!(dotted_name) >> (
+        from_name: opt!(call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name)) >> (
           (leading_dots, from_name.unwrap_or(Vec::new()))
         )
       ))
-    | dotted_name => { |n| (0, n) }
+    | call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name) => { |n| (0, n) }
     ) >>
     space_sep2 >>
     tag!("import") >>
     space_sep2 >>
     names: alt!(
       char!('*') => { |_| Vec::new() }
-    | ws2!(delimited!(char!('('), import_as_names, char!(')')))
-    | import_as_names
+    | ws2!(delimited!(char!('('), call!(ImportParser::<NewlinesAreSpaces>::import_as_names), char!(')')))
+    | call!(ImportParser::<NewlinesAreNotSpaces>::import_as_names)
     ) >> ({
       let (leading_dots, path) = import_from;
       Import::ImportFrom { leading_dots, path, names }
@@ -229,13 +239,18 @@ named!(import_from<CompleteStr, Import>,
   )
 );
 
+pub(crate) struct ImportParser<ANS: AreNewlinesSpaces> {
+    _phantom: PhantomData<ANS>,
+}
+
+impl<ANS: AreNewlinesSpaces> ImportParser<ANS> {
 
 // import_as_name: NAME ['as' NAME]
 named!(import_as_name<CompleteStr, (Name, Option<Name>)>,
   tuple!(name, opt!(do_parse!(
-    space_sep2 >>
+    space_sep!() >>
     tag!("as") >>
-    space_sep2 >>
+    space_sep!() >>
     name: name >> (
       name
     )
@@ -244,10 +259,10 @@ named!(import_as_name<CompleteStr, (Name, Option<Name>)>,
 
 // dotted_as_name: dotted_name ['as' NAME]
 named!(dotted_as_name<CompleteStr, (Vec<Name>, Option<Name>)>,
-  tuple!(dotted_name, opt!(do_parse!(
-    space_sep2 >>
+  tuple!(call!(Self::dotted_name), opt!(do_parse!(
+    space_sep!() >>
     tag!("as") >>
-    space_sep2 >>
+    space_sep!() >>
     name: name >> (
       name
     )
@@ -256,18 +271,23 @@ named!(dotted_as_name<CompleteStr, (Vec<Name>, Option<Name>)>,
 
 // import_as_names: import_as_name (',' import_as_name)* [',']
 named!(import_as_names<CompleteStr, Vec<(Name, Option<Name>)>>,
-  ws2!(terminated!(separated_nonempty_list!(char!(','), import_as_name), opt!(char!(','))))
+  terminated!(
+    separated_nonempty_list!(tuple!(spaces!(), char!(','), spaces!()), call!(Self::import_as_name)),
+    opt!(tuple!(spaces!(), char!(','), spaces!()))
+  )
 );
 
 // dotted_as_names: dotted_as_name (',' dotted_as_name)*
 named!(dotted_as_names<CompleteStr, Vec<(Vec<Name>, Option<Name>)>>,
-  separated_nonempty_list!(ws2!(char!(',')), dotted_as_name)
+  separated_nonempty_list!(tuple!(spaces!(), char!(','), spaces!()), call!(Self::dotted_as_name))
 );
 
 // dotted_name: NAME ('.' NAME)*
 named!(dotted_name<CompleteStr, Vec<Name>>,
-  separated_nonempty_list!(ws2!(char!('.')), name)
+  separated_nonempty_list!(tuple!(spaces!(), char!('.'), spaces!()), name)
 );
+
+} // end ImportParser
 
 /*********************************************************************
  * Blocks
