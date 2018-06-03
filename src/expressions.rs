@@ -5,48 +5,10 @@ use nom::{IResult, Err, Context, ErrorKind};
 use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
 
 use helpers;
-use helpers::StrSpan;
-use helpers::{Name, name};
+use helpers::{StrSpan, name};
 use helpers::{AreNewlinesSpaces, NewlinesAreSpaces};
-use functions::{varargslist, UntypedArgsList};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArgumentError {
-    KeywordExpression,
-    PositionalAfterKeyword,
-    StarargsAfterKeyword,
-}
-
-impl ArgumentError {
-    pub fn to_string(self) -> &'static str {
-        match self {
-            ArgumentError::KeywordExpression => "Keyword cannot be an expression.",
-            ArgumentError::PositionalAfterKeyword => "Positional argument after keyword argument or **kwargs.",
-            ArgumentError::StarargsAfterKeyword => "*args after keyword argument or **kwargs.",
-        }
-    }
-}
-
-impl From<u32> for ArgumentError {
-    fn from(i: u32) -> ArgumentError {
-        match i {
-            1 => ArgumentError::KeywordExpression,
-            2 => ArgumentError::PositionalAfterKeyword,
-            3 => ArgumentError::StarargsAfterKeyword,
-            _ => panic!("Invalid error code.")
-        }
-    }
-}
-
-impl From<ArgumentError> for u32 {
-    fn from(e: ArgumentError) -> u32 {
-        match e {
-            ArgumentError::KeywordExpression => 1,
-            ArgumentError::PositionalAfterKeyword => 2,
-            ArgumentError::StarargsAfterKeyword => 3,
-        }
-    }
-}
+use functions::varargslist;
+use ast::*;
 
 #[derive(Clone, Debug, PartialEq)]
 enum RawArgument {
@@ -54,122 +16,6 @@ enum RawArgument {
     Keyword(Expression, Expression),
     Starargs(Expression),
     Kwargs(Expression),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Argument<T> {
-    Normal(T),
-    Star(Expression),
-}
-#[derive(Clone, Debug, PartialEq)]
-pub struct Arglist {
-    pub positional_args: Vec<Argument<Expression>>,
-    pub keyword_args: Vec<Argument<(Name, Expression)>>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Subscript {
-    Simple(Expression),
-    Double(Option<Expression>, Option<Expression>),
-    Triple(Option<Expression>, Option<Expression>, Option<Expression>),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Uop {
-    Plus,
-    Minus,
-    /// `~`
-    Invert,
-    Not,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Bop {
-    Add,
-    Sub,
-    Mult,
-    Matmult,
-    Mod,
-    Floordiv,
-    Div,
-    Power,
-    Lshift,
-    Rshift,
-    BitAnd,
-    BitXor,
-    BitOr,
-    /// lower than
-    Lt,
-    /// greater than
-    Gt,
-    Eq,
-    /// lower or equal
-    Leq,
-    /// greater or equal
-    Geq,
-    Neq,
-    In,
-    NotIn,
-    Is,
-    IsNot,
-    And,
-    Or,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum ComprehensionChunk {
-    If { cond: Expression },
-    For { async: bool, item: Vec<Expression>, iterator: Expression },
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum DictItem {
-    Star(Expression),
-    Unique(Expression, Expression),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum SetItem {
-    Star(Expression),
-    Unique(Expression),
-}
-
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Expression {
-    Ellipsis,
-    None,
-    True,
-    False,
-    Name(Name),
-    Int(i64),
-    Complex { real: f64, imaginary: f64 },
-    Float(f64),
-    String(String),
-    Bytes(Vec<u8>),
-    DictLiteral(Vec<DictItem>),
-    SetLiteral(Vec<SetItem>),
-    ListLiteral(Vec<SetItem>),
-    TupleLiteral(Vec<SetItem>),
-    DictComp(Box<DictItem>, Vec<ComprehensionChunk>),
-    SetComp(Box<SetItem>, Vec<ComprehensionChunk>),
-    ListComp(Box<SetItem>, Vec<ComprehensionChunk>),
-    Generator(Box<SetItem>, Vec<ComprehensionChunk>),
-
-    Call(Box<Expression>, Arglist),
-    Subscript(Box<Expression>, Vec<Subscript>),
-    /// `foo.bar`
-    Attribute(Box<Expression>, Name),
-    /// Unary operator
-    Uop(Uop, Box<Expression>),
-    /// Binary operator
-    Bop(Bop, Box<Expression>, Box<Expression>),
-    /// 1 if 2 else 3
-    Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
-    Yield(Vec<Expression>),
-    YieldFrom(Box<Expression>),
-    Star(Box<Expression>),
-    Lambdef(UntypedArgsList, Box<Expression>),
 }
 
 pub(crate) struct ExpressionParser<ANS: AreNewlinesSpaces> {

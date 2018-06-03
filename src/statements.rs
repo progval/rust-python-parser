@@ -1,110 +1,9 @@
 use std::marker::PhantomData;
 
 use helpers::*;
-use expressions::{Expression, ExpressionParser, Arglist};
-use functions::{decorated, Decorator, TypedArgsList};
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum Import {
-    /// `from x import y`
-    ImportFrom {
-        /// For `from .....x import y`, this is 5
-        leading_dots: usize,
-        /// For `from .....x import y`, this `x`
-        path: Vec<Name>,
-        /// For `from x import y, z`, this `vec![(y, None), (vec![z], None)]`.
-        /// For `from x import y as z`, this `vec![(y, Some(z))]`.
-        /// For `from x import *`, this is `vec![]`.
-        names: Vec<(Name, Option<Name>)>
-    },
-    /// `import x.y as z, foo.bar` is
-    /// `Import::Import(vec![(vec![x, y], Some(z)), (vec![foo, bar], None)])`.
-    Import { names: Vec<(Vec<Name>, Option<Name>)> },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum AugAssignOp {
-    Add,
-    Sub,
-    Mult,
-    MatMult,
-    Div,
-    Mod,
-    BitAnd,
-    BitOr,
-    BitXor,
-    Lshift,
-    Rshift,
-    Power,
-    Floordiv,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum Statement {
-    Pass,
-    Del(Vec<Name>),
-    Break,
-    Continue,
-    Return(Vec<Expression>),
-    RaiseExcFrom(Expression, Expression),
-    RaiseExc(Expression),
-    Raise,
-    Global(Vec<Name>),
-    Nonlocal(Vec<Name>),
-    Assert(Expression, Option<Expression>),
-    Import(Import),
-    Expressions(Vec<Expression>),
-    // `lhs = rhs1 = rhs2` -> `lhs, vec![rhs1, rhs2]`
-    Assignment(Vec<Expression>, Vec<Vec<Expression>>),
-    // `lhs: type = rhs` -> `lhs, type, rhs`
-    TypedAssignment(Vec<Expression>, Expression, Vec<Expression>),
-    // `lhs += rhs` -> `lhs, AugAssignOp::Add, rhs`
-    AugmentedAssignment(Vec<Expression>, AugAssignOp, Vec<Expression>),
-
-    Compound(Box<CompoundStatement>),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Funcdef {
-    pub async: bool,
-    pub decorators: Vec<Decorator>,
-    pub name: String,
-    pub parameters: TypedArgsList,
-    pub return_type: Option<Expression>,
-    pub code: Vec<Statement>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Classdef {
-    pub decorators: Vec<Decorator>,
-    pub name: String,
-    pub parameters: Arglist,
-    pub code: Vec<Statement>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Try {
-    pub try_block: Vec<Statement>,
-    /// except `1 [as 2]: 3`
-    pub except_clauses: Vec<(Expression, Option<Name>, Vec<Statement>)>,
-    /// Empty iff no `except:` clause.
-    pub last_except: Vec<Statement>,
-    /// Empty iff no `else:` clause.
-    pub else_block: Vec<Statement>,
-    /// Empty iff no `finally:` clause.
-    pub finally_block: Vec<Statement>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum CompoundStatement {
-    If(Vec<(Test, Vec<Statement>)>, Option<Vec<Statement>>),
-    For { async: bool, item: Vec<Expression>, iterator: Vec<Expression>, for_block: Vec<Statement>, else_block: Option<Vec<Statement>> },
-    While(Test, Vec<Statement>, Option<Vec<Statement>>),
-    With(Vec<(Expression, Option<Expression>)>, Vec<Statement>),
-    Funcdef(Funcdef),
-    Classdef(Classdef),
-    Try(Try),
-}
+use expressions::ExpressionParser;
+use functions::decorated;
+use ast::*;
 
 
 macro_rules! call_test {
@@ -432,12 +331,13 @@ named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
   | call!(simple_stmt, 0)
   )
 );
-named_args!(cond_and_block(indent: usize) <StrSpan, (String, Vec<Statement>)>,
+named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)>,
   do_parse!(
-    cond: ws2!(tag!("foo")) >>
+    space_sep >>
+    cond: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
     ws2!(char!(':')) >>
     block: call!(block, indent) >> (
-      (cond.to_string(), block)
+      (*cond, block)
     )
   )
 );
@@ -473,11 +373,11 @@ named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
 // if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
-    tag!("if ") >>
+    tag!("if") >>
     if_block: call!(cond_and_block, indent) >>
     elif_blocks: many0!(
       preceded!(
-        tuple!(newline, count!(char!(' '), indent), tag!("elif ")),
+        tuple!(newline, count!(char!(' '), indent), tag!("elif")),
         call!(cond_and_block, indent)
       )
     ) >>
@@ -492,7 +392,7 @@ named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // while_stmt: 'while' test ':' suite ['else' ':' suite]
 named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
-    tag!("while ") >>
+    tag!("while") >>
     while_block: call!(cond_and_block, indent) >>
     else_block: call!(else_block, indent) >> ({
       let (cond, while_block) = while_block;
@@ -639,7 +539,7 @@ mod tests {
             CompoundStatement::If(
                 vec![
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Del(vec!["bar".to_string()])
                         ]
@@ -656,13 +556,13 @@ mod tests {
             CompoundStatement::If(
                 vec![
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Del(vec!["bar".to_string()])
                         ]
                     ),
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Del(vec!["baz".to_string()])
                         ]
@@ -679,7 +579,7 @@ mod tests {
             CompoundStatement::If(
                 vec![
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Del(vec!["bar".to_string()])
                         ]
@@ -700,13 +600,13 @@ mod tests {
             CompoundStatement::If(
                 vec![
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Del(vec!["bar".to_string()])
                         ]
                     ),
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Del(vec!["baz".to_string()])
                         ]
@@ -727,13 +627,13 @@ mod tests {
             CompoundStatement::If(
                 vec![
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Compound(Box::new(
                               CompoundStatement::If(
                                   vec![
                                       (
-                                          "foo".to_string(),
+                                          Expression::Name("foo".to_string()),
                                           vec![
                                               Statement::Del(vec!["bar".to_string()])
                                           ]
@@ -756,13 +656,13 @@ mod tests {
             CompoundStatement::If(
                 vec![
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Compound(Box::new(
                               CompoundStatement::If(
                                   vec![
                                       (
-                                          "foo".to_string(),
+                                          Expression::Name("foo".to_string()),
                                           vec![
                                               Statement::Del(vec!["bar".to_string()])
                                           ]
@@ -789,13 +689,13 @@ mod tests {
             CompoundStatement::If(
                 vec![
                     (
-                        "foo".to_string(),
+                        Expression::Name("foo".to_string()),
                         vec![
                             Statement::Compound(Box::new(
                               CompoundStatement::If(
                                   vec![
                                       (
-                                          "foo".to_string(),
+                                          Expression::Name("foo".to_string()),
                                           vec![
                                               Statement::Del(vec!["bar".to_string()])
                                           ]
@@ -820,7 +720,7 @@ mod tests {
     fn test_while() {
         assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::While(
-                "foo".to_string(),
+                Expression::Name("foo".to_string()),
                 vec![
                     Statement::Del(vec!["bar".to_string()])
                 ],
@@ -833,7 +733,7 @@ mod tests {
     fn test_while_else() {
         assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::While(
-                "foo".to_string(),
+                Expression::Name("foo".to_string()),
                 vec![
                     Statement::Del(vec!["bar".to_string()])
                 ],

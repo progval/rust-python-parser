@@ -15,10 +15,12 @@ mod expressions;
 #[macro_use]
 mod statements;
 mod functions;
+pub mod ast;
 
 use helpers::*;
 use statements::*;
 use expressions::*;
+use ast::*;
 
 // single_input: NEWLINE | simple_stmt | compound_stmt NEWLINE
 named!(pub parse_single_input <StrSpan, Vec<Statement>>,

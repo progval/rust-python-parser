@@ -5,6 +5,7 @@ use nom::types::CompleteStr;
 use nom_locate::LocatedSpan;
 pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
 
+
 named!(pub space<StrSpan, StrSpan>, eat_separator!(&b" \t"[..]));
 
 #[macro_export]
@@ -83,10 +84,6 @@ macro_rules! space_sep {
         }
     }
 }
-
-pub type Name = String;
-
-pub type Test = String;
 
 use nom::alphanumeric;
 named!(pub name<StrSpan, String>,

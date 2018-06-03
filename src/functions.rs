@@ -3,21 +3,15 @@ use std::marker::PhantomData;
 use nom::IResult;
 
 use statements::{ImportParser, block};
-use statements::{CompoundStatement, Funcdef, Classdef};
-use expressions::{Expression, ExpressionParser, Arglist};
+use expressions::ExpressionParser;
 use helpers::StrSpan;
-use helpers::{name, Name, newline, space_sep2};
+use helpers::{name, newline, space_sep2};
 use helpers::{NewlinesAreSpaces, NewlinesAreNotSpaces};
+use ast::*;
 
 /*********************************************************************
  * Decorators
  *********************************************************************/
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Decorator {
-    name: Vec<Name>,
-    args: Option<Arglist>,
-}
 
 // decorator: '@' dotted_name [ '(' [arglist] ')' ] NEWLINE
 named_args!(decorator(indent: usize) <StrSpan, Decorator>,
@@ -93,38 +87,6 @@ named_args!(classdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, Compou
 /*********************************************************************
  * Function parameters
  *********************************************************************/
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum StarParams<T> {
-    /// No single star
-    No,
-    /// `*` alone, with no name
-    Anonymous,
-    /// *args` or `*args:type`
-    Named(T),
-}
-
-impl<T> Default for StarParams<T> {
-    fn default() -> StarParams<T> {
-        StarParams::No
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Default,)]
-pub struct TypedArgsList {
-    positional_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
-    star_args: StarParams<(Name, Option<Expression>)>,
-    keyword_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
-    star_kwargs: Option<(Name, Option<Expression>)>,
-}
-
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct UntypedArgsList {
-    positional_args: Vec<(Name, Option<Expression>)>,
-    star_args: StarParams<Name>,
-    keyword_args: Vec<(Name, Option<Expression>)>,
-    star_kwargs: Option<Name>,
-}
 
 trait IsItTyped {
     type Return: Clone; // FIXME: do not require Clone
@@ -318,8 +280,6 @@ pub(crate) fn varargslist(i: StrSpan) -> IResult<StrSpan, UntypedArgsList, u32> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use expressions::Argument;
-    use statements::Statement;
     use helpers::{make_strspan, assert_parse_eq};
 
     #[test]
