@@ -169,6 +169,12 @@ fn format_expr(e: &Expression) -> String {
             format!("{}[{}]", format_expr(e), comma_join(sub.iter().map(format_subscript))),
         Expression::Attribute(e, ref n) =>
             format!("{}.{}", format_expr(e), n),
+        Expression::Uop(op, ref e) =>
+            format!("{}{}", op, format_expr(e)),
+        Expression::Bop(op, ref e1, ref e2) =>
+            format!("({}){}({})", format_expr(e1), op, format_expr(e2)),
+        Expression::Ternary(e1, e2, e3) =>
+            format!("({}) if ({}) else ({})", format_expr(e1), format_expr(e2), format_expr(e3)),
         _ => unimplemented!(),
     }
 }

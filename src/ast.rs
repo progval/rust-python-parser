@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArgumentError {
     KeywordExpression,
@@ -103,6 +105,17 @@ pub enum Uop {
     Not,
 }
 
+impl fmt::Display for Uop {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}", match self {
+            Uop::Plus => "+",
+            Uop::Minus => "-",
+            Uop::Invert => "~",
+            Uop::Not => "!",
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Bop {
     Add,
@@ -134,6 +147,38 @@ pub enum Bop {
     IsNot,
     And,
     Or,
+}
+
+impl fmt::Display for Bop {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}", match self {
+            Bop::Add => "+",
+            Bop::Sub => "-",
+            Bop::Mult => "*",
+            Bop::Matmult => "]",
+            Bop::Mod => "%",
+            Bop::Floordiv => "//",
+            Bop::Div => "/",
+            Bop::Power => "**",
+            Bop::Lshift => "<<",
+            Bop::Rshift => ">>",
+            Bop::BitAnd => "&",
+            Bop::BitXor => "^",
+            Bop::BitOr => "|",
+            Bop::Lt => "<",
+            Bop::Gt => ">",
+            Bop::Eq => "==",
+            Bop::Leq => "<=",
+            Bop::Geq => ">=",
+            Bop::Neq => "!=",
+            Bop::In => " in ",
+            Bop::NotIn => " not in ",
+            Bop::Is => " is ",
+            Bop::IsNot => "is not ",
+            Bop::And => " and ",
+            Bop::Or => " or ",
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
