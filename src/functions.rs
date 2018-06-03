@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
 
-use nom::types::CompleteStr;
 use nom::IResult;
 
 use statements::{ImportParser, block};
 use statements::{CompoundStatement, Funcdef, Classdef};
 use expressions::{Expression, ExpressionParser, Arglist};
+use helpers::StrSpan;
 use helpers::{name, Name, newline, space_sep2};
 use helpers::{NewlinesAreSpaces, NewlinesAreNotSpaces};
 
@@ -20,7 +20,7 @@ pub struct Decorator {
 }
 
 // decorator: '@' dotted_name [ '(' [arglist] ')' ] NEWLINE
-named_args!(decorator(indent: usize) <CompleteStr, Decorator>,
+named_args!(decorator(indent: usize) <StrSpan, Decorator>,
   preceded!(count!(char!(' '), indent),
     ws2!(do_parse!(
       char!('@') >>
@@ -34,12 +34,12 @@ named_args!(decorator(indent: usize) <CompleteStr, Decorator>,
 );
 
 // decorators: decorator+
-named_args!(decorators(indent: usize) <CompleteStr, Vec<Decorator>>,
+named_args!(decorators(indent: usize) <StrSpan, Vec<Decorator>>,
   many0!(call!(decorator, indent))
 );
 
 // decorated: decorators (classdef | funcdef | async_funcdef)
-named_args!(pub decorated(indent: usize) <CompleteStr, CompoundStatement>,
+named_args!(pub decorated(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     decorators: call!(decorators, indent) >>
     s: alt!(
@@ -55,7 +55,7 @@ named_args!(pub decorated(indent: usize) <CompleteStr, CompoundStatement>,
 
 // async_funcdef: ASYNC funcdef
 // funcdef: 'def' NAME parameters ['->' test] ':' suite
-named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <CompleteStr, CompoundStatement>,
+named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, CompoundStatement>,
   do_parse!(
     count!(char!(' '), indent) >>
     async: opt!(tuple!(tag!("async"), space_sep2)) >>
@@ -74,7 +74,7 @@ named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <CompleteStr, Com
 );
 
 // classdef: 'class' NAME ['(' [arglist] ')'] ':' suite
-named_args!(classdef(indent: usize, decorators: Vec<Decorator>) <CompleteStr, CompoundStatement>,
+named_args!(classdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, CompoundStatement>,
   do_parse!(
     count!(char!(' '), indent) >>
     tag!("class") >>
@@ -130,9 +130,9 @@ trait IsItTyped {
     type Return: Clone; // FIXME: do not require Clone
     type List;
 
-    fn fpdef<'a>(input: CompleteStr<'a>) -> IResult<CompleteStr<'a>, Self::Return, u32>;
+    fn fpdef<'a>(input: StrSpan<'a>) -> IResult<StrSpan<'a>, Self::Return, u32>;
 
-    fn fpdef_with_default<'a>(i: CompleteStr<'a>) -> IResult<CompleteStr<'a>, (Self::Return, Option<Box<Expression>>), u32> {
+    fn fpdef_with_default<'a>(i: StrSpan<'a>) -> IResult<StrSpan<'a>, (Self::Return, Option<Box<Expression>>), u32> {
         ws!(i, tuple!(
             Self::fpdef,
             opt!(
@@ -153,7 +153,7 @@ impl IsItTyped for Typed {
     type Return = (Name, Option<Box<Expression>>);
     type List = TypedArgsList;
 
-    named!(fpdef<CompleteStr, Self::Return>,
+    named!(fpdef<StrSpan, Self::Return>,
       ws!(tuple!(name,
         opt!(preceded!(char!(':'), call!(ExpressionParser::<NewlinesAreSpaces>::test)))
       ))
@@ -184,7 +184,7 @@ impl IsItTyped for Untyped {
     type Return = Name;
     type List = UntypedArgsList;
 
-    named!(fpdef<CompleteStr, Self::Return>,
+    named!(fpdef<StrSpan, Self::Return>,
       tuple!(name)
     );
 
@@ -208,7 +208,7 @@ impl IsItTyped for Untyped {
 }
 
 // parameters: '(' [typedargslist] ')'
-named!(parameters<CompleteStr, TypedArgsList>,
+named!(parameters<StrSpan, TypedArgsList>,
   map!(delimited!(char!('('), opt!(ws!(typedargslist)), char!(')')), |o| o.unwrap_or_default())
 );
 
@@ -233,7 +233,7 @@ struct ParamlistParser<IIT: IsItTyped> {
     phantom: PhantomData<IIT>
 }
 impl<IIT: IsItTyped> ParamlistParser<IIT> {
-    named!(parse<CompleteStr, IIT::List>, ws!(
+    named!(parse<StrSpan, IIT::List>, ws!(
       alt!(
       /***************************
        * Case 1: only **kwargs
@@ -307,37 +307,37 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
     ));
 }
 
-pub(crate) fn typedargslist(i: CompleteStr) -> IResult<CompleteStr, TypedArgsList, u32> {
+pub(crate) fn typedargslist(i: StrSpan) -> IResult<StrSpan, TypedArgsList, u32> {
     ParamlistParser::<Typed>::parse(i)
 }
 
-pub(crate) fn varargslist(i: CompleteStr) -> IResult<CompleteStr, UntypedArgsList, u32> {
+pub(crate) fn varargslist(i: StrSpan) -> IResult<StrSpan, UntypedArgsList, u32> {
     ParamlistParser::<Untyped>::parse(i)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom::types::CompleteStr as CS;
     use expressions::Argument;
     use statements::Statement;
+    use helpers::{make_strspan, assert_parse_eq};
 
     #[test]
     fn test_decorator() {
-        assert_eq!(decorator(CS("@foo\n"), 0), Ok((CS(""),
+        assert_parse_eq(decorator(make_strspan("@foo\n"), 0), Ok((make_strspan(""),
             Decorator {
                 name: vec!["foo".to_string()],
                 args: None,
             }
         )));
-        assert_eq!(decorator(CS("@foo.bar\n"), 0), Ok((CS(""),
+        assert_parse_eq(decorator(make_strspan("@foo.bar\n"), 0), Ok((make_strspan(""),
             Decorator {
                 name: vec!["foo".to_string(), "bar".to_string()],
                 args: None,
             }
         )));
 
-        assert_eq!(decorator(CS("@foo(baz)\n"), 0), Ok((CS(""),
+        assert_parse_eq(decorator(make_strspan("@foo(baz)\n"), 0), Ok((make_strspan(""),
             Decorator {
                 name: vec!["foo".to_string()],
                 args: Some(Arglist {
@@ -346,7 +346,7 @@ mod tests {
                 })
             }
         )));
-        assert_eq!(decorator(CS("@foo.bar(baz)\n"), 0), Ok((CS(""),
+        assert_parse_eq(decorator(make_strspan("@foo.bar(baz)\n"), 0), Ok((make_strspan(""),
             Decorator {
                 name: vec!["foo".to_string(), "bar".to_string()],
                 args: Some(Arglist {
@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn test_funcdef() {
-        assert_eq!(decorated(CS("def foo():\n bar"), 0), Ok((CS(""),
+        assert_parse_eq(decorated(make_strspan("def foo():\n bar"), 0), Ok((make_strspan(""),
             CompoundStatement::Funcdef(Funcdef {
                 async: false,
                 decorators: vec![],
@@ -370,7 +370,7 @@ mod tests {
             })
         )));
 
-        assert_eq!(decorated(CS(" def foo():\n  bar"), 1), Ok((CS(""),
+        assert_parse_eq(decorated(make_strspan(" def foo():\n  bar"), 1), Ok((make_strspan(""),
             CompoundStatement::Funcdef(Funcdef {
                 async: false,
                 decorators: vec![],
@@ -381,12 +381,12 @@ mod tests {
             })
         )));
 
-        assert!(decorated(CS(" def foo():\n bar"), 1).is_err());
+        assert!(decorated(make_strspan(" def foo():\n bar"), 1).is_err());
     }
 
     #[test]
     fn test_positional() {
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None, None),
@@ -397,7 +397,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo")), Ok((make_strspan(""),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),
@@ -408,7 +408,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo=bar")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo=bar")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None, Some(Expression::Name("bar".to_string()))),
@@ -419,7 +419,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo=bar")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo=bar")), Ok((make_strspan(""),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), Some(Expression::Name("bar".to_string()))),
@@ -430,7 +430,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo:bar")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo:bar")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), Some(Expression::Name("bar".to_string())), None),
@@ -441,7 +441,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo:bar")), Ok((CS(":bar"),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo:bar")), Ok((make_strspan(":bar"),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),
@@ -452,7 +452,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo:bar=baz")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo:bar=baz")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), Some(Expression::Name("bar".to_string())), Some(Expression::Name("baz".to_string()))),
@@ -463,7 +463,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo:bar=baz")), Ok((CS(":bar=baz"),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo:bar=baz")), Ok((make_strspan(":bar=baz"),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),
@@ -474,7 +474,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo, bar")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo, bar")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None, None),
@@ -486,7 +486,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo, bar")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo, bar")), Ok((make_strspan(""),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),
@@ -501,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_star_args() {
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo, *, bar")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo, *, bar")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None, None),
@@ -514,7 +514,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo, *, bar")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo, *, bar")), Ok((make_strspan(""),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),
@@ -527,7 +527,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo, *, bar=baz")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo, *, bar=baz")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None, None),
@@ -540,7 +540,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo, *, bar=baz")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo, *, bar=baz")), Ok((make_strspan(""),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),
@@ -556,7 +556,7 @@ mod tests {
 
     #[test]
     fn test_star_kwargs() {
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo, **kwargs")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo, **kwargs")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None, None),
@@ -568,7 +568,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo, **kwargs")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo, **kwargs")), Ok((make_strspan(""),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),
@@ -580,7 +580,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo, *args, **kwargs")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo, *args, **kwargs")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None, None),
@@ -592,7 +592,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo, *args, **kwargs")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo, *args, **kwargs")), Ok((make_strspan(""),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),
@@ -604,7 +604,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Typed>::parse(CS("foo, *, bar, **kwargs")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Typed>::parse(make_strspan("foo, *, bar, **kwargs")), Ok((make_strspan(""),
             TypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None, None),
@@ -617,7 +617,7 @@ mod tests {
             }
         )));
 
-        assert_eq!(ParamlistParser::<Untyped>::parse(CS("foo, *, bar, **kwargs")), Ok((CS(""),
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("foo, *, bar, **kwargs")), Ok((make_strspan(""),
             UntypedArgsList {
                 positional_args: vec![
                     ("foo".to_string(), None),

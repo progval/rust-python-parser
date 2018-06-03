@@ -1,6 +1,11 @@
-use nom::types::CompleteStr;
+#[cfg(test)]
+use std::fmt::Debug;
 
-named!(pub space<CompleteStr, CompleteStr>, eat_separator!(&b" \t"[..]));
+use nom::types::CompleteStr;
+use nom_locate::LocatedSpan;
+pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
+
+named!(pub space<StrSpan, StrSpan>, eat_separator!(&b" \t"[..]));
 
 #[macro_export]
 macro_rules! ws2 (
@@ -22,19 +27,19 @@ macro_rules! ws2 (
   )
 );
 
-named!(pub spaces<CompleteStr, ()>,
+named!(pub spaces<StrSpan, ()>,
   map!(many0!(one_of!(" \t\n")), |_| ())
 );
 
-named!(pub spaces2<CompleteStr, ()>,
+named!(pub spaces2<StrSpan, ()>,
   map!(many0!(one_of!(" \t")), |_| ())
 );
 
-named!(pub space_sep<CompleteStr, ()>,
+named!(pub space_sep<StrSpan, ()>,
   map!(many1!(one_of!(" \t\n")), |_| ())
 );
 
-named!(pub space_sep2<CompleteStr, ()>,
+named!(pub space_sep2<StrSpan, ()>,
   map!(many1!(one_of!(" \t")), |_| ())
 );
 
@@ -84,15 +89,37 @@ pub type Name = String;
 pub type Test = String;
 
 use nom::alphanumeric;
-named!(pub name<CompleteStr, String>,
+named!(pub name<StrSpan, String>,
   map!(alphanumeric, |s| s.to_string())
   // TODO
 );
 
-named!(pub newline<CompleteStr, ()>,
+named!(pub newline<StrSpan, ()>,
   map!(preceded!(space, char!('\n')), |_| ())
 );
 
-named!(pub semicolon<CompleteStr, ()>,
+named!(pub semicolon<StrSpan, ()>,
   map!(ws2!(char!(';')), |_| ())
 );
+
+#[cfg(test)]
+pub(crate) fn make_strspan(s: &str) -> StrSpan {
+    StrSpan::new(CompleteStr(s))
+}
+
+#[cfg(test)]
+pub(crate) fn assert_parse_eq<T: Debug + PartialEq>(
+        left:  Result<(StrSpan, T), ::nom::Err<StrSpan>>,
+        right: Result<(StrSpan, T), ::nom::Err<StrSpan>>,
+        ) {
+    use nom::Context;
+    match (left, right) {
+        (Ok((left_span, left_tree)), Ok((right_span, right_tree))) =>
+            assert_eq!(((left_span.fragment, left_tree)), ((right_span.fragment, right_tree))),
+        (Err(::nom::Err::Failure(Context::Code(left_span, left_code))), Err(::nom::Err::Failure(Context::Code(right_span, right_code)))) =>
+            assert_eq!((left_span.fragment, left_code), (right_span.fragment, right_code)),
+        (Err(::nom::Err::Incomplete(_)), _) => unreachable!(),
+        (_, Err(::nom::Err::Incomplete(_))) => panic!("We're only using complete strings here!"),
+        (l, r) => assert_eq!(l, r),
+    }
+}

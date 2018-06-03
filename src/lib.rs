@@ -2,7 +2,7 @@
 
 #[macro_use]
 extern crate nom;
-use nom::types::CompleteStr;
+extern crate nom_locate;
 
 #[cfg(test)]
 #[macro_use]
@@ -21,7 +21,7 @@ use statements::*;
 use expressions::*;
 
 // single_input: NEWLINE | simple_stmt | compound_stmt NEWLINE
-named!(pub parse_single_input <CompleteStr, Vec<Statement>>,
+named!(pub parse_single_input <StrSpan, Vec<Statement>>,
   alt!(
     newline => { |_| Vec::new() }
   | call!(statement, 0, 0) => { |stmts| stmts }
@@ -29,7 +29,7 @@ named!(pub parse_single_input <CompleteStr, Vec<Statement>>,
 );
 
 // file_input: (NEWLINE | stmt)* ENDMARKER
-named!(pub file_input <CompleteStr, Vec<Statement>>,
+named!(pub file_input <StrSpan, Vec<Statement>>,
   fold_many0!(
     alt!(
       call!(statement, 0, 0) => { |s| Some(s) }
@@ -41,7 +41,7 @@ named!(pub file_input <CompleteStr, Vec<Statement>>,
 );
 
 // eval_input: testlist NEWLINE* ENDMARKER
-named!(pub eval_input <CompleteStr, Vec<Expression>>,
+named!(pub eval_input <StrSpan, Vec<Expression>>,
   terminated!(ws2!(call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist)), many0!(newline))
 );
 
@@ -51,14 +51,14 @@ named!(pub eval_input <CompleteStr, Vec<Expression>>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom::types::CompleteStr as CS;
+    use helpers::{make_strspan, assert_parse_eq};
 
     #[test]
     fn foo() {
-        assert_eq!(newline(CS("\n")), Ok((CS(""), ())));
-        assert_eq!(parse_single_input(CS("del foo")), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_eq!(parse_single_input(CS("del foo bar")), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string(), "bar".to_string()])])));
-        assert_eq!(parse_single_input(CS("del foo; del bar")), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["bar".to_string()])])));
-        assert_eq!(parse_single_input(CS("del foo ;del bar")), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["bar".to_string()])])));
+        assert_parse_eq(newline(make_strspan("\n")), Ok((make_strspan(""), ())));
+        assert_parse_eq(parse_single_input(make_strspan("del foo")), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(parse_single_input(make_strspan("del foo bar")), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string(), "bar".to_string()])])));
+        assert_parse_eq(parse_single_input(make_strspan("del foo; del bar")), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["bar".to_string()])])));
+        assert_parse_eq(parse_single_input(make_strspan("del foo ;del bar")), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["bar".to_string()])])));
     }
 }

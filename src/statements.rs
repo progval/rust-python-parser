@@ -1,7 +1,5 @@
 use std::marker::PhantomData;
 
-use nom::types::CompleteStr;
-
 use helpers::*;
 use expressions::{Expression, ExpressionParser, Arglist};
 use functions::{decorated, Decorator, TypedArgsList};
@@ -118,7 +116,7 @@ macro_rules! call_test {
  *********************************************************************/
 
 // stmt: simple_stmt | compound_stmt
-named_args!(pub statement(first_indent: usize, indent: usize) <CompleteStr, Vec<Statement>>,
+named_args!(pub statement(first_indent: usize, indent: usize) <StrSpan, Vec<Statement>>,
   alt!(
     call!(compound_stmt, first_indent, indent) => { |stmt| vec![Statement::Compound(Box::new(stmt))] }
   | call!(simple_stmt, first_indent)
@@ -126,7 +124,7 @@ named_args!(pub statement(first_indent: usize, indent: usize) <CompleteStr, Vec<
 );
 
 // simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
-named_args!(simple_stmt(indent: usize) <CompleteStr, Vec<Statement>>,
+named_args!(simple_stmt(indent: usize) <StrSpan, Vec<Statement>>,
   do_parse!(
     count!(char!(' '), indent) >>
     stmts: separated_nonempty_list!(semicolon, call!(small_stmt)) >>
@@ -138,7 +136,7 @@ named_args!(simple_stmt(indent: usize) <CompleteStr, Vec<Statement>>,
 
 // small_stmt: (expr_stmt | del_stmt | pass_stmt | flow_stmt |
 //             import_stmt | global_stmt | nonlocal_stmt | assert_stmt)
-named!(small_stmt<CompleteStr, Statement>,
+named!(small_stmt<StrSpan, Statement>,
   alt!(
     expr_stmt
   | del_stmt => { |atoms| Statement::Del(atoms) }
@@ -158,7 +156,7 @@ named!(small_stmt<CompleteStr, Statement>,
 // expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
 //                     ('=' (yield_expr|testlist_star_expr))*)
 // annassign: ':' test ['=' test]
-named!(expr_stmt<CompleteStr, Statement>,
+named!(expr_stmt<StrSpan, Statement>,
   do_parse!(
     lhs: testlist_star_expr >>
     r: ws2!(alt!(
@@ -198,7 +196,7 @@ named!(expr_stmt<CompleteStr, Statement>,
 );
 
 // testlist_star_expr: (test|star_expr) (',' (test|star_expr))* [',']
-named!(testlist_star_expr<CompleteStr, Vec<Expression>>,
+named!(testlist_star_expr<StrSpan, Vec<Expression>>,
   terminated!(
     separated_nonempty_list!(
       ws2!(char!(',')),
@@ -213,7 +211,7 @@ named!(testlist_star_expr<CompleteStr, Vec<Expression>>,
 
 // augassign: ('+=' | '-=' | '*=' | '@=' | '/=' | '%=' | '&=' | '|=' | '^=' |
 //            '<<=' | '>>=' | '**=' | '//=')
-named!(augassign<CompleteStr, AugAssignOp>,
+named!(augassign<StrSpan, AugAssignOp>,
   ws2!(alt!(
     tag!("+=") => { |_| AugAssignOp::Add }
   | tag!("-=") => { |_| AugAssignOp::Sub }
@@ -236,12 +234,12 @@ named!(augassign<CompleteStr, AugAssignOp>,
  *********************************************************************/
 
 // del_stmt: 'del' exprlist
-named!(del_stmt<CompleteStr, Vec<String>>,
+named!(del_stmt<StrSpan, Vec<String>>,
   preceded!(tuple!(tag!("del"), space_sep2), ws2!(many1!(name)))
 );
 
 // pass_stmt: 'pass'
-named!(pass_stmt<CompleteStr, Statement>,
+named!(pass_stmt<StrSpan, Statement>,
   map!(tag!("pass"), |_| Statement::Pass)
 );
 
@@ -250,7 +248,7 @@ named!(pass_stmt<CompleteStr, Statement>,
 // continue_stmt: 'continue'
 // return_stmt: 'return' [testlist]
 // yield_stmt: yield_expr
-named!(flow_stmt<CompleteStr, Statement>,
+named!(flow_stmt<StrSpan, Statement>,
   alt!(
     tag!("break") => { |_| Statement::Break }
   | tag!("continue") => { |_| Statement::Continue }
@@ -265,7 +263,7 @@ named!(flow_stmt<CompleteStr, Statement>,
 );
 
 // raise_stmt: 'raise' [test ['from' test]]
-named!(raise_stmt<CompleteStr, Statement>,
+named!(raise_stmt<StrSpan, Statement>,
   do_parse!(
     tag!("raise") >>
     t: opt!(tuple!(
@@ -282,21 +280,21 @@ named!(raise_stmt<CompleteStr, Statement>,
 );
 
 // global_stmt: 'global' NAME (',' NAME)*
-named!(global_stmt<CompleteStr, Statement>,
+named!(global_stmt<StrSpan, Statement>,
   map!(preceded!(tuple!(tag!("global"), space_sep2),
     ws2!(separated_nonempty_list!(char!(','), name))
   ), |names| Statement::Global(names))
 );
 
 // nonlocal_stmt: 'nonlocal' NAME (',' NAME)*
-named!(nonlocal_stmt<CompleteStr, Statement>,
+named!(nonlocal_stmt<StrSpan, Statement>,
   map!(preceded!(tuple!(tag!("nonlocal"), space_sep2),
     ws2!(separated_nonempty_list!(char!(','), name))
   ), |names| Statement::Nonlocal(names))
 );
 
 // assert_stmt: 'assert' test [',' test]
-named!(assert_stmt<CompleteStr, Statement>,
+named!(assert_stmt<StrSpan, Statement>,
   do_parse!(
     tag!("assert") >>
     space_sep2 >>
@@ -312,7 +310,7 @@ named!(assert_stmt<CompleteStr, Statement>,
  *********************************************************************/
 
 // import_stmt: import_name | import_from
-named!(import_stmt<CompleteStr, Statement>,
+named!(import_stmt<StrSpan, Statement>,
   alt!(
     import_name => { |i| Statement::Import(i) }
   | import_from => { |i| Statement::Import(i) }
@@ -320,7 +318,7 @@ named!(import_stmt<CompleteStr, Statement>,
 );
 
 // import_name: 'import' dotted_as_names
-named!(import_name<CompleteStr, Import>,
+named!(import_name<StrSpan, Import>,
   map!(preceded!(tuple!(tag!("import"), space_sep2), call!(ImportParser::<NewlinesAreNotSpaces>::dotted_as_names)),
     |names| Import::Import { names }
   )
@@ -331,7 +329,7 @@ named!(import_name<CompleteStr, Import>,
 //
 // the explicit presence of '...' is for parsers that use a lexer, because
 // they would recognize ... as an ellipsis.
-named!(import_from<CompleteStr, Import>,
+named!(import_from<StrSpan, Import>,
   do_parse!(
     tag!("from") >>
     space_sep2 >>
@@ -365,7 +363,7 @@ pub(crate) struct ImportParser<ANS: AreNewlinesSpaces> {
 impl<ANS: AreNewlinesSpaces> ImportParser<ANS> {
 
 // import_as_name: NAME ['as' NAME]
-named!(import_as_name<CompleteStr, (Name, Option<Name>)>,
+named!(import_as_name<StrSpan, (Name, Option<Name>)>,
   tuple!(name, opt!(do_parse!(
     space_sep!() >>
     tag!("as") >>
@@ -377,7 +375,7 @@ named!(import_as_name<CompleteStr, (Name, Option<Name>)>,
 );
 
 // dotted_as_name: dotted_name ['as' NAME]
-named!(dotted_as_name<CompleteStr, (Vec<Name>, Option<Name>)>,
+named!(dotted_as_name<StrSpan, (Vec<Name>, Option<Name>)>,
   tuple!(call!(Self::dotted_name), opt!(do_parse!(
     space_sep!() >>
     tag!("as") >>
@@ -389,7 +387,7 @@ named!(dotted_as_name<CompleteStr, (Vec<Name>, Option<Name>)>,
 );
 
 // import_as_names: import_as_name (',' import_as_name)* [',']
-named!(import_as_names<CompleteStr, Vec<(Name, Option<Name>)>>,
+named!(import_as_names<StrSpan, Vec<(Name, Option<Name>)>>,
   terminated!(
     separated_nonempty_list!(tuple!(spaces!(), char!(','), spaces!()), call!(Self::import_as_name)),
     opt!(tuple!(spaces!(), char!(','), spaces!()))
@@ -397,12 +395,12 @@ named!(import_as_names<CompleteStr, Vec<(Name, Option<Name>)>>,
 );
 
 // dotted_as_names: dotted_as_name (',' dotted_as_name)*
-named!(dotted_as_names<CompleteStr, Vec<(Vec<Name>, Option<Name>)>>,
+named!(dotted_as_names<StrSpan, Vec<(Vec<Name>, Option<Name>)>>,
   separated_nonempty_list!(tuple!(spaces!(), char!(','), spaces!()), call!(Self::dotted_as_name))
 );
 
 // dotted_name: NAME ('.' NAME)*
-named!(pub dotted_name<CompleteStr, Vec<Name>>,
+named!(pub dotted_name<StrSpan, Vec<Name>>,
   separated_nonempty_list!(tuple!(spaces!(), char!('.'), spaces!()), name)
 );
 
@@ -413,7 +411,7 @@ named!(pub dotted_name<CompleteStr, Vec<Name>>,
  *********************************************************************/
 
 // suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
-named_args!(pub block(indent: usize) <CompleteStr, Vec<Statement>>,
+named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
   alt!(
     do_parse!(
       newline >>
@@ -434,7 +432,7 @@ named_args!(pub block(indent: usize) <CompleteStr, Vec<Statement>>,
   | call!(simple_stmt, 0)
   )
 );
-named_args!(cond_and_block(indent: usize) <CompleteStr, (String, Vec<Statement>)>,
+named_args!(cond_and_block(indent: usize) <StrSpan, (String, Vec<Statement>)>,
   do_parse!(
     cond: ws2!(tag!("foo")) >>
     ws2!(char!(':')) >>
@@ -446,7 +444,7 @@ named_args!(cond_and_block(indent: usize) <CompleteStr, (String, Vec<Statement>)
 
 
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
-named_args!(compound_stmt(first_indent: usize, indent: usize) <CompleteStr, CompoundStatement>,
+named_args!(compound_stmt(first_indent: usize, indent: usize) <StrSpan, CompoundStatement>,
   preceded!(
     count!(char!(' '), first_indent),
     alt!(
@@ -463,7 +461,7 @@ named_args!(compound_stmt(first_indent: usize, indent: usize) <CompleteStr, Comp
 // async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
 // taken care of in other parsers
 
-named_args!(else_block(indent: usize) <CompleteStr, Option<Vec<Statement>>>,
+named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
   opt!(
     preceded!(
       tuple!(newline, count!(char!(' '), indent), tag!("else"), ws2!(char!(':'))),
@@ -473,7 +471,7 @@ named_args!(else_block(indent: usize) <CompleteStr, Option<Vec<Statement>>>,
 );
 
 // if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
-named_args!(if_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     tag!("if ") >>
     if_block: call!(cond_and_block, indent) >>
@@ -492,7 +490,7 @@ named_args!(if_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 );
 
 // while_stmt: 'while' test ':' suite ['else' ':' suite]
-named_args!(while_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     tag!("while ") >>
     while_block: call!(cond_and_block, indent) >>
@@ -504,7 +502,7 @@ named_args!(while_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 );
 
 // for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
-named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     async: opt!(tuple!(tag!("async"), space_sep2)) >>
     tag!("for") >>
@@ -531,7 +529,7 @@ named_args!(for_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 //             ['finally' ':' suite] |
 //             'finally' ':' suite))
 // except_clause: 'except' [test ['as' NAME]]
-named_args!(try_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     tag!("try") >>
     ws2!(char!(':')) >>
@@ -584,7 +582,7 @@ named_args!(try_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 
 // with_stmt: 'with' with_item (',' with_item)*  ':' suite
 // with_item: test ['as' expr]
-named_args!(with_stmt(indent: usize) <CompleteStr, CompoundStatement>,
+named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     tag!("with") >>
     space_sep2 >>
@@ -615,29 +613,29 @@ named_args!(with_stmt(indent: usize) <CompleteStr, CompoundStatement>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom::types::CompleteStr as CS;
+    use helpers::{make_strspan, assert_parse_eq};
 
     #[test]
     fn test_statement_indent() {
-        assert_eq!(statement(CS("del foo"), 0, 0), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_eq!(statement(CS(" del foo"), 1, 1), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert!(statement(CS("del foo"), 1, 1).is_err());
-        assert!(statement(CS(" del foo"), 0, 0).is_err());
+        assert_parse_eq(statement(make_strspan("del foo"), 0, 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(statement(make_strspan(" del foo"), 1, 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert!(statement(make_strspan("del foo"), 1, 1).is_err());
+        assert!(statement(make_strspan(" del foo"), 0, 0).is_err());
     }
 
     #[test]
     fn test_block() {
-        assert_eq!(block(CS("\n del foo"), 0), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_eq!(block(CS("\n  del foo"), 1), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_eq!(block(CS("\n      del foo"), 1), Ok((CS(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert!(block(CS("\ndel foo"), 0).is_err());
-        assert!(block(CS("\ndel foo"), 1).is_err());
-        assert!(block(CS("\n del foo"), 1).is_err());
+        assert_parse_eq(block(make_strspan("\n del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(block(make_strspan("\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(block(make_strspan("\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert!(block(make_strspan("\ndel foo"), 0).is_err());
+        assert!(block(make_strspan("\ndel foo"), 1).is_err());
+        assert!(block(make_strspan("\n del foo"), 1).is_err());
     }
 
     #[test]
     fn test_if() {
-        assert_eq!(compound_stmt(CS("if foo:\n del bar"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -654,7 +652,7 @@ mod tests {
 
     #[test]
     fn test_elif() {
-        assert_eq!(compound_stmt(CS("if foo:\n del bar\nelif foo:\n del baz"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -677,7 +675,7 @@ mod tests {
 
     #[test]
     fn test_if_else() {
-        assert_eq!(compound_stmt(CS("if foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -698,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_elif_else() {
-        assert_eq!(compound_stmt(CS("if foo:\n del bar\nelif foo:\n del baz\nelse:\n del qux"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -725,7 +723,7 @@ mod tests {
 
     #[test]
     fn test_nested_if() {
-        assert_eq!(compound_stmt(CS("if foo:\n if foo:\n  del bar"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -754,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_dangling_else_1() {
-        assert_eq!(compound_stmt(CS("if foo:\n if foo:\n  del bar\nelse:\n del qux"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -787,7 +785,7 @@ mod tests {
 
     #[test]
     fn test_dangling_else_2() {
-        assert_eq!(compound_stmt(CS("if foo:\n if foo:\n  del bar\n else:\n  del qux"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar\n else:\n  del qux"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -820,7 +818,7 @@ mod tests {
 
     #[test]
     fn test_while() {
-        assert_eq!(compound_stmt(CS("while foo:\n del bar"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::While(
                 "foo".to_string(),
                 vec![
@@ -833,7 +831,7 @@ mod tests {
 
     #[test]
     fn test_while_else() {
-        assert_eq!(compound_stmt(CS("while foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::While(
                 "foo".to_string(),
                 vec![
@@ -850,7 +848,7 @@ mod tests {
 
     #[test]
     fn test_for() {
-        assert_eq!(compound_stmt(CS("for foo in bar:\n del baz"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("for foo in bar:\n del baz"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::For {
                 async: false,
                 item: vec![Expression::Name("foo".to_string())],
@@ -865,7 +863,7 @@ mod tests {
 
     #[test]
     fn test_for_else() {
-        assert_eq!(compound_stmt(CS("for foo in bar:\n del baz\nelse:\n del qux"), 0, 0), Ok((CS(""),
+        assert_parse_eq(compound_stmt(make_strspan("for foo in bar:\n del baz\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
             CompoundStatement::For {
                 async: false,
                 item: vec![Expression::Name("foo".to_string())],
@@ -884,17 +882,17 @@ mod tests {
 
     #[test]
     fn test_raise() {
-        assert_eq!(small_stmt(CS("raise")), Ok((CS(""),
+        assert_parse_eq(small_stmt(make_strspan("raise")), Ok((make_strspan(""),
             Statement::Raise
         )));
 
-        assert_eq!(small_stmt(CS("raise exc")), Ok((CS(""),
+        assert_parse_eq(small_stmt(make_strspan("raise exc")), Ok((make_strspan(""),
             Statement::RaiseExc(
                 Expression::Name("exc".to_string()),
             )
         )));
 
-        assert_eq!(small_stmt(CS("raise exc from exc2")), Ok((CS(""),
+        assert_parse_eq(small_stmt(make_strspan("raise exc from exc2")), Ok((make_strspan(""),
             Statement::RaiseExcFrom(
                 Expression::Name("exc".to_string()),
                 Expression::Name("exc2".to_string()),
@@ -904,7 +902,7 @@ mod tests {
 
     #[test]
     fn test_assign() {
-        assert_eq!(small_stmt(CS("foo = bar")), Ok((CS(""),
+        assert_parse_eq(small_stmt(make_strspan("foo = bar")), Ok((make_strspan(""),
             Statement::Assignment(
                 vec![
                     Expression::Name("foo".to_string()),
@@ -917,7 +915,7 @@ mod tests {
             )
         )));
 
-        assert_eq!(small_stmt(CS("foo = bar = baz")), Ok((CS(""),
+        assert_parse_eq(small_stmt(make_strspan("foo = bar = baz")), Ok((make_strspan(""),
             Statement::Assignment(
                 vec![
                     Expression::Name("foo".to_string()),
@@ -936,7 +934,7 @@ mod tests {
 
     #[test]
     fn test_augassign() {
-        assert_eq!(small_stmt(CS("foo:bar = baz")), Ok((CS(""),
+        assert_parse_eq(small_stmt(make_strspan("foo:bar = baz")), Ok((make_strspan(""),
             Statement::TypedAssignment(
                 vec![
                     Expression::Name("foo".to_string()),
@@ -951,7 +949,7 @@ mod tests {
 
     #[test]
     fn test_unpack_assign() {
-        assert_eq!(small_stmt(CS("foo, bar = baz, qux")), Ok((CS(""),
+        assert_parse_eq(small_stmt(make_strspan("foo, bar = baz, qux")), Ok((make_strspan(""),
             Statement::Assignment(
                 vec![
                     Expression::Name("foo".to_string()),
@@ -966,7 +964,7 @@ mod tests {
             )
         )));
 
-        assert_eq!(small_stmt(CS("foo = bar = baz")), Ok((CS(""),
+        assert_parse_eq(small_stmt(make_strspan("foo = bar = baz")), Ok((make_strspan(""),
             Statement::Assignment(
                 vec![
                     Expression::Name("foo".to_string()),
@@ -985,7 +983,7 @@ mod tests {
 
     #[test]
     fn test_with() {
-        assert_eq!(with_stmt(CS("with foo:\n del bar"), 0), Ok((CS(""),
+        assert_parse_eq(with_stmt(make_strspan("with foo:\n del bar"), 0), Ok((make_strspan(""),
             CompoundStatement::With(
                 vec![
                     (Expression::Name("foo".to_string()), None),
@@ -996,7 +994,7 @@ mod tests {
             )
         )));
 
-        assert_eq!(with_stmt(CS("with foo as bar:\n del baz"), 0), Ok((CS(""),
+        assert_parse_eq(with_stmt(make_strspan("with foo as bar:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::With(
                 vec![
                     (Expression::Name("foo".to_string()), Some(Expression::Name("bar".to_string()))),
@@ -1010,7 +1008,7 @@ mod tests {
 
     #[test]
     fn test_try() {
-        assert_eq!(try_stmt(CS("try:\n del foo\nexcept Bar:\n del baz"), 0), Ok((CS(""),
+        assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nexcept Bar:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
                     Statement::Del(vec!["foo".to_string()]),
@@ -1028,7 +1026,7 @@ mod tests {
             })
         )));
 
-        assert_eq!(try_stmt(CS("try:\n del foo\nexcept:\n del baz"), 0), Ok((CS(""),
+        assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nexcept:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
                     Statement::Del(vec!["foo".to_string()]),
@@ -1042,7 +1040,7 @@ mod tests {
             })
         )));
 
-        assert_eq!(try_stmt(CS("try:\n del foo\nelse:\n del baz"), 0), Ok((CS(""),
+        assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nelse:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
                     Statement::Del(vec!["foo".to_string()]),
@@ -1056,7 +1054,7 @@ mod tests {
             })
         )));
 
-        assert_eq!(try_stmt(CS("try:\n del foo\nfinally:\n del baz"), 0), Ok((CS(""),
+        assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nfinally:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
                     Statement::Del(vec!["foo".to_string()]),

@@ -6,7 +6,7 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 nom = "^4.0"
-nom_locate = "^0.1"
+nom_locate = { git = "https://github.com/ProgVal/nom_locate", branch = "nom4" }
 
 [dev-dependencies]
 pretty_assertions = "^0.4"
