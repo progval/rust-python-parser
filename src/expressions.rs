@@ -263,8 +263,15 @@ named!(atom<StrSpan, Box<Expression>>,
   | name => { |n| Expression::Name(n) }
   | separated_nonempty_list!(space_sep!(), delimited!(
       char!('"'),
-      escaped_transform!(call!(nom::alpha), '\\', nom::anychar),
+      escaped_transform!(none_of!("\\\""), '\\', nom::anychar),
       char!('"')
+    )) => { |strings: Vec<String>|
+      Expression::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
+    }
+  | separated_nonempty_list!(space_sep!(), delimited!(
+      char!('\''),
+      escaped_transform!(none_of!("\\'"), '\\', nom::anychar),
+      char!('\'')
     )) => { |strings: Vec<String>|
       Expression::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
     }
@@ -605,6 +612,8 @@ mod tests {
         assert_parse_eq(atom(make_strspan(r#""foo" "bar""#)), Ok((make_strspan(""), Box::new(Expression::String("foobar".to_string())))));
         assert_parse_eq(atom(make_strspan(r#""fo\"o" "#)), Ok((make_strspan(" "), Box::new(Expression::String("fo\"o".to_string())))));
         assert_parse_eq(atom(make_strspan(r#""fo"o" "#)), Ok((make_strspan(r#"o" "#), Box::new(Expression::String("fo".to_string())))));
+        assert_parse_eq(atom(make_strspan(r#""fo \" o" "#)), Ok((make_strspan(" "), Box::new(Expression::String("fo \" o".to_string())))));
+        assert_parse_eq(atom(make_strspan(r#"'fo \' o' "#)), Ok((make_strspan(" "), Box::new(Expression::String("fo ' o".to_string())))));
     }
 
     #[test]
