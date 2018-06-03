@@ -1181,6 +1181,23 @@ mod tests {
     }
 
     #[test]
+    fn test_call_and_attribute() {
+        let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
+        assert_parse_eq(atom_expr(make_strspan("foo.bar().baz")), Ok((make_strspan(""),
+            Box::new(Expression::Attribute(
+                Box::new(Expression::Call(
+                    Box::new(Expression::Attribute(
+                        Box::new(Expression::Name("foo".to_string())),
+                        "bar".to_string(),
+                    )),
+                    Arglist::default(),
+                )),
+                "baz".to_string(),
+            ))
+        )));
+    }
+
+    #[test]
     fn test_atom_expr() {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_parse_eq(atom_expr(make_strspan("foo.bar[baz]")), Ok((make_strspan(""),

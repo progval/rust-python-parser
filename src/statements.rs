@@ -37,14 +37,14 @@ named_args!(simple_stmt(indent: usize) <StrSpan, Vec<Statement>>,
 //             import_stmt | global_stmt | nonlocal_stmt | assert_stmt)
 named!(small_stmt<StrSpan, Statement>,
   alt!(
-    expr_stmt
-  | del_stmt => { |atoms| Statement::Del(atoms) }
+    del_stmt => { |atoms| Statement::Del(atoms) }
   | pass_stmt
   | flow_stmt
   | import_stmt
   | global_stmt
   | nonlocal_stmt
   | assert_stmt
+  | expr_stmt
   )
 );
 
@@ -59,18 +59,8 @@ named!(expr_stmt<StrSpan, Statement>,
   do_parse!(
     lhs: testlist_star_expr >>
     r: ws2!(alt!(
-      // Case 1: foo = bar
+      // Case 1: "foo: bar = baz"
       do_parse!(
-        rhs: many1!(ws2!(preceded!(char!('='), alt!(
-          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
-        | testlist_star_expr
-        )))) >> (
-          Statement::Assignment(lhs.clone(), rhs)
-        )
-      )
-
-      // Case 2: foo: bar = baz
-    | do_parse!(
         char!(':') >>
         typed: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
         char!('=') >>
@@ -79,8 +69,18 @@ named!(expr_stmt<StrSpan, Statement>,
         )
       )
 
-      // Case 3: Foo += bar (and other operators)
-    | do_parse!(
+    | // Case 2: "foo", "foo = bar", "foo = bar = baz", ...
+      do_parse!(
+        rhs: many0!(ws2!(preceded!(char!('='), alt!(
+          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
+        | testlist_star_expr
+        )))) >> (
+          Statement::Assignment(lhs.clone(), rhs)
+        )
+      )
+
+    | // Case 3: "Foo += bar" (and other operators)
+      do_parse!(
         op: augassign >>
         rhs: alt!(
           call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
@@ -156,8 +156,8 @@ named!(flow_stmt<StrSpan, Statement>,
       ws2!(call!(ExpressionParser::<NewlinesAreNotSpaces>::possibly_empty_testlist))
     ) => { |e| Statement::Return(e) }
   | raise_stmt
-  | call!(ExpressionParser::<NewlinesAreNotSpaces>::possibly_empty_testlist)
-    => { |e| Statement::Expressions(e) }
+  | call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr)
+    => { |e| Statement::Expressions(vec![e]) }
   )
 );
 
@@ -969,4 +969,12 @@ mod tests {
         )));
     }
 
+    #[test]
+    fn test_import() {
+        assert_parse_eq(statement(make_strspan("import foo"), 0, 0), Ok((make_strspan(""),
+            vec![Statement::Import(Import::Import {
+                names: vec![(vec!["foo".to_string()], None)],
+            })]
+        )));
+    }
 }

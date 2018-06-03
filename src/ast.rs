@@ -81,7 +81,7 @@ pub enum Argument<T> {
     Normal(T),
     Star(Expression),
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Arglist {
     pub positional_args: Vec<Argument<Expression>>,
     pub keyword_args: Vec<Argument<(Name, Expression)>>,

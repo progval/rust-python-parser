@@ -99,8 +99,7 @@ named!(pub semicolon<StrSpan, ()>,
   map!(ws2!(char!(';')), |_| ())
 );
 
-#[cfg(test)]
-pub(crate) fn make_strspan(s: &str) -> StrSpan {
+pub fn make_strspan(s: &str) -> StrSpan {
     StrSpan::new(CompleteStr(s))
 }
 

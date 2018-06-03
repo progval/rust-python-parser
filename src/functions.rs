@@ -58,7 +58,7 @@ named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, Compoun
     name: name >>
     parameters: ws2!(parameters) >>
     return_type: opt!(ws2!(preceded!(tag!("->"), call!(ExpressionParser::<NewlinesAreNotSpaces>::test)))) >>
-    ws2!(char!(':')) >> 
+    ws2!(char!(':')) >>
     code: call!(block, indent) >> (
       CompoundStatement::Funcdef(Funcdef {
           async: async.is_some(), decorators, name, parameters, return_type: return_type.map(|t| *t), code
@@ -326,7 +326,7 @@ mod tests {
                 name: "foo".to_string(),
                 parameters: TypedArgsList::default(),
                 return_type: None,
-                code: vec![Statement::Expressions(vec![Expression::Name("bar".to_string())])],
+                code: vec![Statement::Assignment(vec![Expression::Name("bar".to_string())], vec![])],
             })
         )));
 
@@ -337,7 +337,7 @@ mod tests {
                 name: "foo".to_string(),
                 parameters: TypedArgsList::default(),
                 return_type: None,
-                code: vec![Statement::Expressions(vec![Expression::Name("bar".to_string())])],
+                code: vec![Statement::Assignment(vec![Expression::Name("bar".to_string())], vec![])],
             })
         )));
 

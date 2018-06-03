@@ -16,11 +16,14 @@ mod expressions;
 mod statements;
 mod functions;
 pub mod ast;
+pub mod visitors;
 
 use helpers::*;
 use statements::*;
 use expressions::*;
 use ast::*;
+
+pub use helpers::make_strspan;
 
 // single_input: NEWLINE | simple_stmt | compound_stmt NEWLINE
 named!(pub parse_single_input <StrSpan, Vec<Statement>>,
