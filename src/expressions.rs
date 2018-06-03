@@ -306,8 +306,8 @@ named!(testlist_comp<StrSpan, Expression>,
       | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
       ) >>
     r: alt!(
-      call!(Self::comp_for) => { |comp| Expression::ListComp(Box::new(first), comp) }
-    | preceded!(char!(','), separated_list!(char!(','),
+      preceded!(space_sep!(), call!(Self::comp_for)) => { |comp| Expression::ListComp(Box::new(first), comp) }
+    | preceded!(ws3!(char!(',')), separated_list!(ws3!(char!(',')),
         alt!(
           call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
         | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
@@ -1346,7 +1346,46 @@ mod tests {
                 iterator: Expression::Name("baz".to_string()),
             },
         ])));
+    }
 
+    #[test]
+    fn test_listcomp() {
+        let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
+
+        assert_parse_eq(atom(make_strspan("[foo for bar in baz]")), Ok((make_strspan(""),
+            Box::new(Expression::ListComp(
+                Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
+                vec![
+                    ComprehensionChunk::For {
+                        async: false,
+                        item: vec![
+                            Expression::Name("bar".to_string()),
+                        ],
+                        iterator: Expression::Name("baz".to_string()),
+                    },
+                ],
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_listcomp2() {
+        let testlist_comp = ExpressionParser::<NewlinesAreNotSpaces>::testlist_comp;
+
+        assert_parse_eq(testlist_comp(make_strspan("foo for bar in baz")), Ok((make_strspan(""),
+            Expression::ListComp(
+                Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
+                vec![
+                    ComprehensionChunk::For {
+                        async: false,
+                        item: vec![
+                            Expression::Name("bar".to_string()),
+                        ],
+                        iterator: Expression::Name("baz".to_string()),
+                    },
+                ],
+            )
+        )));
     }
 
     #[test]

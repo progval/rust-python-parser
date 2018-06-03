@@ -76,6 +76,12 @@ macro_rules! spaces {
     }
 }
 
+macro_rules! ws3 {
+    ( $i:expr, $($args:tt)* ) => {
+        delimited!($i, spaces!(), $($args)*, spaces!())
+    }
+}
+
 macro_rules! space_sep {
     ( $i:expr, $($args:tt)* ) => {
         match ANS::VALUE {
