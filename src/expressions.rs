@@ -74,7 +74,7 @@ named!(test_nocond<StrSpan, Box<Expression>>,
 named!(lambdef<StrSpan, Box<Expression>>,
   do_parse!(
     tag!("lambda") >>
-    spaces!() >>
+    space_sep!() >>
     args: opt!(varargslist) >>
     char!(':') >>
     code: call!(Self::test) >> (
@@ -87,7 +87,7 @@ named!(lambdef<StrSpan, Box<Expression>>,
 named!(lambdef_nocond<StrSpan, Box<Expression>>,
   do_parse!(
     tag!("lambda") >>
-    spaces!() >>
+    space_sep!() >>
     args: opt!(varargslist) >>
     char!(':') >>
     code: call!(Self::test_nocond) >> (
@@ -278,7 +278,6 @@ named!(atom<StrSpan, Box<Expression>>,
   | ws2!(tuple!(char!('['), opt!(ws!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
   | ws2!(tuple!(char!('{'), opt!(ws!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
   | ws2!(tuple!(char!('('), opt!(ws!(char!(' '))), char!(')'))) => { |_| Expression::TupleLiteral(vec![]) }
-  | ws2!(tuple!(char!('{'), char!('}'))) => { |_| Expression::DictLiteral(Vec::new()) }
   | ws2!(delimited!(char!('{'), ws!(map!(
       call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker), |e:Box<_>| *e
     )), char!('}')))
@@ -309,7 +308,7 @@ named!(testlist_comp<StrSpan, Expression>,
       | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
       ) >>
     r: alt!(
-      preceded!(space_sep!(), call!(Self::comp_for)) => { |comp| Expression::ListComp(Box::new(first), comp) }
+      call!(Self::comp_for) => { |comp| Expression::ListComp(Box::new(first), comp) }
     | preceded!(ws3!(char!(',')), separated_list!(ws3!(char!(',')),
         alt!(
           call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
@@ -378,15 +377,15 @@ impl ExpressionParser<NewlinesAreSpaces> {
 //                   ((test | star_expr)
 //                    (comp_for | (',' (test | star_expr))* [','])) )
 named!(dictorsetmaker<StrSpan, Box<Expression>>,
-  ws!(alt!(
+  alt!(
     do_parse!(
-      tag!("**") >>
+      ws!(tag!("**")) >>
       e: map!(call!(Self::expr), |e: Box<_>| DictItem::Star(*e)) >>
       r: call!(Self::dictmaker, e) >>
       (r)
     )
   | do_parse!(
-      tag!("*") >>
+      ws!(tag!("*")) >>
       e: map!(call!(Self::expr), |e: Box<_>| SetItem::Star(*e)) >>
       r: call!(Self::setmaker, e) >>
       (r)
@@ -395,7 +394,7 @@ named!(dictorsetmaker<StrSpan, Box<Expression>>,
       key: call!(Self::test) >>
       r: alt!(
         do_parse!(
-          char!(':') >>
+          ws!(char!(':')) >>
           item: map!(call!(Self::test), |value: Box<_>| DictItem::Unique(*key.clone(), *value)) >> // FIXME: do not clone
           r: call!(Self::dictmaker, item) >>
           (r)
@@ -404,7 +403,7 @@ named!(dictorsetmaker<StrSpan, Box<Expression>>,
       ) >>
       (r)
     )
-  ))
+  )
 );
 
 named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
@@ -436,7 +435,7 @@ named_args!(setmaker(item1: SetItem) <StrSpan, Box<Expression>>,
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::SetLiteral(v))
       }}
-    | preceded!(peek!(tuple!(tag!("for"), call!(helpers::space_sep))), call!(Self::comp_for)) => { |comp| {
+    | call!(Self::comp_for) => { |comp| {
         Box::new(Expression::SetComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
     )) >> (
@@ -556,6 +555,7 @@ named!(comp_for<StrSpan, Vec<ComprehensionChunk>>,
 );
 named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChunk>>,
   do_parse!(
+    space_sep!() >>
     async: map!(opt!(terminated!(tag!("async"), space_sep!())), |o| o.is_some()) >>
     tag!("for") >>
     space_sep!() >>
@@ -573,10 +573,10 @@ named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionC
 // comp_if: 'if' test_nocond [comp_iter]
 named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChunk>>,
   do_parse!(
+    space_sep!() >>
     tag!("if") >>
     space_sep!() >>
     cond: map!(call!(Self::test_nocond), |e| *e) >>
-    space_sep!() >>
     r: call!(Self::opt_comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::If { cond }); acc }) >> (
       r
     )
@@ -1340,7 +1340,7 @@ mod tests {
     fn test_comp_for() {
         let comp_for = ExpressionParser::<NewlinesAreNotSpaces>::comp_for;
 
-        assert_parse_eq(comp_for(make_strspan("for bar in baz")), Ok((make_strspan(""), vec![
+        assert_parse_eq(comp_for(make_strspan(" for bar in baz")), Ok((make_strspan(""), vec![
             ComprehensionChunk::For {
                 async: false,
                 item: vec![
@@ -1385,6 +1385,56 @@ mod tests {
                             Expression::Name("bar".to_string()),
                         ],
                         iterator: Expression::Name("baz".to_string()),
+                    },
+                ],
+            )
+        )));
+    }
+
+    #[test]
+    fn test_listcomp2_chain_for() {
+        let testlist_comp = ExpressionParser::<NewlinesAreNotSpaces>::testlist_comp;
+
+        assert_parse_eq(testlist_comp(make_strspan("foo for bar in baz for qux in quux")), Ok((make_strspan(""),
+            Expression::ListComp(
+                Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
+                vec![
+                    ComprehensionChunk::For {
+                        async: false,
+                        item: vec![
+                            Expression::Name("bar".to_string()),
+                        ],
+                        iterator: Expression::Name("baz".to_string()),
+                    },
+                    ComprehensionChunk::For {
+                        async: false,
+                        item: vec![
+                            Expression::Name("qux".to_string()),
+                        ],
+                        iterator: Expression::Name("quux".to_string()),
+                    },
+                ],
+            )
+        )));
+    }
+
+    #[test]
+    fn test_listcomp2_chain_if() {
+        let testlist_comp = ExpressionParser::<NewlinesAreNotSpaces>::testlist_comp;
+
+        assert_parse_eq(testlist_comp(make_strspan("foo for bar in baz if qux")), Ok((make_strspan(""),
+            Expression::ListComp(
+                Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
+                vec![
+                    ComprehensionChunk::For {
+                        async: false,
+                        item: vec![
+                            Expression::Name("bar".to_string()),
+                        ],
+                        iterator: Expression::Name("baz".to_string()),
+                    },
+                    ComprehensionChunk::If {
+                        cond: Expression::Name("qux".to_string()),
                     },
                 ],
             )
