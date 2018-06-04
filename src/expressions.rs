@@ -100,17 +100,12 @@ named!(lambdef_nocond<StrSpan, Box<Expression>>,
 
 macro_rules! bop {
     ( $name:ident, $child:path, $tag:ident!($($args:tt)*) ) => {
-    //( $name:ident, $child:tt, $tag1:ident!($($args1:tt)*) => $op1:tt, $( $tag:ident!($($args:tt)*) => $op:tt ),* ) => {
         named!(pub $name<StrSpan, Box<Expression>>,
           do_parse!(
             first: call!($child) >>
             r: fold_many0!(
               tuple!(
                 delimited!(spaces!(), $tag!($($args)*), spaces!()),
-                /*ws2!(alt!(
-                  $tag1($($args1)*) => { |_| $op1 }
-                  $( | $tag($($args)*) => { |_| $op } )*
-                )),*/
                 $child
               ),
               first,
@@ -236,7 +231,7 @@ named!(atom_expr<StrSpan, Box<Expression>>,
       alt!(
         delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')) => { |args| Trailer::Call(args) }
       | delimited!(char!('['), ws!(separated_list!(char!(','), call!(ExpressionParser::<NewlinesAreSpaces>::subscript))), char!(']')) => { |i| Trailer::Subscript(i) }
-      | preceded!(ws2!(char!('.')), name) => { |name| Trailer::Attribute(name) }
+      | preceded!(ws3!(char!('.')), name) => { |name| Trailer::Attribute(name) }
       ),
       lhs,
       |acc, item| Box::new(match item {
@@ -275,13 +270,13 @@ named!(atom<StrSpan, Box<Expression>>,
     )) => { |strings: Vec<String>|
       Expression::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
     }
-  | ws2!(tuple!(char!('['), opt!(ws!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
-  | ws2!(tuple!(char!('{'), opt!(ws!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
-  | ws2!(tuple!(char!('('), opt!(ws!(char!(' '))), char!(')'))) => { |_| Expression::TupleLiteral(vec![]) }
-  | ws2!(delimited!(char!('{'), ws!(map!(
+  | ws3!(tuple!(char!('['), opt!(ws!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
+  | ws3!(tuple!(char!('{'), opt!(ws!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
+  | ws3!(tuple!(char!('('), opt!(ws!(char!(' '))), char!(')'))) => { |_| Expression::TupleLiteral(vec![]) }
+  | ws3!(delimited!(char!('{'), ws!(map!(
       call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker), |e:Box<_>| *e
     )), char!('}')))
-  | ws2!(delimited!(char!('('), ws!(
+  | ws3!(delimited!(char!('('), ws!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(')'))) => { |e|
       match e {
@@ -290,13 +285,13 @@ named!(atom<StrSpan, Box<Expression>>,
           _ => unreachable!(),
       }
     }
-  | ws2!(delimited!(char!('('), ws!(
+  | ws3!(delimited!(char!('('), ws!(
       call!(ExpressionParser::<NewlinesAreSpaces>::yield_expr)
     ), char!(')')))
-  | ws2!(delimited!(char!('['), ws!(
+  | ws3!(delimited!(char!('['), ws!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(']')))
-  | ws2!(number)
+  | ws3!(number)
   ), |e| Box::new(e))
 );
 
@@ -353,15 +348,15 @@ named_args!(subscript_trail(first: Option<Expression>) <StrSpan, Subscript>,
 
 // exprlist: (expr|star_expr) (',' (expr|star_expr))* [',']
 named!(pub exprlist<StrSpan, Vec<Expression>>,
-  separated_nonempty_list!(ws2!(char!(',')), map!(alt!(call!(Self::expr)|call!(Self::star_expr)), |e| *e))
+  separated_nonempty_list!(ws3!(char!(',')), map!(alt!(call!(Self::expr)|call!(Self::star_expr)), |e| *e))
 );
 
 // testlist: test (',' test)* [',']
 named!(pub testlist<StrSpan, Vec<Expression>>,
-  separated_nonempty_list!(ws2!(char!(',')), map!(call!(Self::test), |e| *e))
+  separated_nonempty_list!(ws3!(char!(',')), map!(call!(Self::test), |e| *e))
 );
 named!(pub possibly_empty_testlist<StrSpan, Vec<Expression>>,
-  separated_list!(ws2!(char!(',')), map!(call!(Self::test), |e| *e))
+  separated_list!(ws3!(char!(',')), map!(call!(Self::test), |e| *e))
 );
 
 } // end ExpressionParser
