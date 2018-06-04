@@ -128,6 +128,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
                     s.push_str(&format_expr(cond));
                     s.push_str(":\n");
                     s.push_str(&format_block(indent+4, block));
+                    first = false;
                 }
                 else {
                     push_indent(indent, &mut s);
@@ -453,9 +454,11 @@ fn format_dotted_name(path: &[String]) -> String {
     let mut s = "".to_string();
     let mut first = true;
     for part in path {
-        if !first {
-            s.push_str(".");
+        if first {
             first = false;
+        }
+        else {
+            s.push_str(".");
         }
         s.push_str(part);
     }

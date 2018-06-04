@@ -14,8 +14,11 @@ fn main() {
         let mut file = File::open(filename).expect("Could not open file");
         let mut content = String::new();
         file.read_to_string(&mut content).expect("Could not read file");
-        let ast = file_input(make_strspan(&content)).unwrap();
-        let output = format_module(&ast.1);
+        let (rest, ast) = file_input(make_strspan(&content)).unwrap();
+        let output = format_module(&ast);
+        if rest.fragment.0.len() > 0 {
+            println!("\nUnparsed: {:?}\n\n", rest.fragment.0)
+        }
         println!("{}", output);
     }
 }
