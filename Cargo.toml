@@ -12,6 +12,7 @@ path = "src/main.rs"
 nom = "^4.0"
 #nom_locate = { path = "../nom_locate/" }
 nom_locate = { git = "https://github.com/ProgVal/nom_locate", branch = "nom4" }
+unicode-xid = "^0.1"
 
 [dev-dependencies]
 pretty_assertions = "^0.4"

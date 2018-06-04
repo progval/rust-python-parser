@@ -347,13 +347,17 @@ named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)
 named_args!(compound_stmt(first_indent: usize, indent: usize) <StrSpan, CompoundStatement>,
   preceded!(
     count!(char!(' '), first_indent),
-    alt!(
-      call!(if_stmt, indent)
-    | call!(for_stmt, indent)
-    | call!(while_stmt, indent)
-    | call!(try_stmt, indent)
-    | call!(with_stmt, indent)
-    | call!(decorated, indent) // Also takes care of funcdef, classdef, and ASYNC funcdef
+    switch!(map!(peek!(call!(::nom::alpha)), |s| s.fragment.0),
+      "if" => call!(if_stmt, indent)
+    | "for" => call!(for_stmt, indent)
+    | "while" => call!(while_stmt, indent)
+    | "try" => call!(try_stmt, indent)
+    | "with" => call!(with_stmt, indent)
+    | "def" => call!(decorated, indent)
+    | "async" => alt!(
+        call!(decorated, indent) // ASYNC funcdef
+      | call!(for_stmt, indent)
+      )
     )
   )
 );
@@ -372,7 +376,7 @@ named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
 
 // if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
-  do_parse!(
+  dbg_dmp!(do_parse!(
     tag!("if") >>
     if_block: call!(cond_and_block, indent) >>
     elif_blocks: many0!(
@@ -386,7 +390,7 @@ named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
       blocks.insert(0, if_block);
       CompoundStatement::If(blocks, else_block)
     })
-  )
+  ))
 );
 
 // while_stmt: 'while' test ':' suite ['else' ':' suite]

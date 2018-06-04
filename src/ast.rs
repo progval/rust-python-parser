@@ -174,7 +174,7 @@ impl fmt::Display for Bop {
             Bop::In => " in ",
             Bop::NotIn => " not in ",
             Bop::Is => " is ",
-            Bop::IsNot => "is not ",
+            Bop::IsNot => " is not ",
             Bop::And => " and ",
             Bop::Or => " or ",
         })

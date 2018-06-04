@@ -154,8 +154,8 @@ bop!(comparison, Self::expr, alt!(
 | tag!("!=") => { |_| Bop::Neq }
 | tag!("in") => { |_| Bop::In }
 | tuple!(tag!("not"), space_sep!(), tag!("in"), space_sep!()) => { |_| Bop::NotIn }
-| tuple!(tag!("is"), space_sep!()) => { |_| Bop::Is }
 | tuple!(tag!("is"), space_sep!(), tag!("not"), space_sep!()) => { |_| Bop::IsNot }
+| tuple!(tag!("is"), space_sep!()) => { |_| Bop::Is }
 ));
 
 // star_expr: '*' expr
@@ -275,6 +275,9 @@ named!(atom<StrSpan, Box<Expression>>,
     )) => { |strings: Vec<String>|
       Expression::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
     }
+  | ws2!(tuple!(char!('['), opt!(ws!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
+  | ws2!(tuple!(char!('{'), opt!(ws!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
+  | ws2!(tuple!(char!('('), opt!(ws!(char!(' '))), char!(')'))) => { |_| Expression::TupleLiteral(vec![]) }
   | ws2!(tuple!(char!('{'), char!('}'))) => { |_| Expression::DictLiteral(Vec::new()) }
   | ws2!(delimited!(char!('{'), ws!(map!(
       call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker), |e:Box<_>| *e

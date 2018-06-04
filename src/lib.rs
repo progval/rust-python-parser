@@ -8,6 +8,8 @@ extern crate nom_locate;
 #[macro_use]
 extern crate pretty_assertions;
 
+extern crate unicode_xid;
+
 #[macro_use]
 mod helpers;
 #[macro_use]

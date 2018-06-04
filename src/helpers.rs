@@ -1,6 +1,8 @@
 #[cfg(test)]
 use std::fmt::Debug;
 
+use unicode_xid::UnicodeXID;
+
 use nom::types::CompleteStr;
 use nom_locate::LocatedSpan;
 pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
@@ -91,10 +93,13 @@ macro_rules! space_sep {
     }
 }
 
-use nom::alphanumeric;
 named!(pub name<StrSpan, String>,
-  map!(alphanumeric, |s| s.to_string())
-  // TODO
+  map!(
+    tuple!(
+      verify!(call!(::nom::anychar), |c| UnicodeXID::is_xid_start(c)),
+      take_while!(call!(|c| UnicodeXID::is_xid_continue(c)))
+    ), |(c, s)| format!("{}{}", c, s.fragment)
+  )
 );
 
 named!(pub newline<StrSpan, ()>,
