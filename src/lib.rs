@@ -31,7 +31,7 @@ pub use helpers::make_strspan;
 named!(pub parse_single_input <StrSpan, Vec<Statement>>,
   alt!(
     newline => { |_| Vec::new() }
-  | call!(statement, 0, 0) => { |stmts| stmts }
+  | call!(statement, 0) => { |stmts| stmts }
   )
 );
 
@@ -39,7 +39,7 @@ named!(pub parse_single_input <StrSpan, Vec<Statement>>,
 named!(pub file_input <StrSpan, Vec<Statement>>,
   fold_many0!(
     alt!(
-      call!(statement, 0, 0) => { |s| Some(s) }
+      call!(statement, 0) => { |s| Some(s) }
     | newline => { |_| None }
     ),
     Vec::new(),

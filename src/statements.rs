@@ -15,17 +15,16 @@ macro_rules! call_test {
  *********************************************************************/
 
 // stmt: simple_stmt | compound_stmt
-named_args!(pub statement(first_indent: usize, indent: usize) <StrSpan, Vec<Statement>>,
+named_args!(pub statement(indent: usize) <StrSpan, Vec<Statement>>,
   alt!(
-    call!(compound_stmt, first_indent, indent) => { |stmt| vec![Statement::Compound(Box::new(stmt))] }
-  | call!(simple_stmt, first_indent)
+    call!(compound_stmt, indent) => { |stmt| vec![Statement::Compound(Box::new(stmt))] }
+  | call!(simple_stmt)
   )
 );
 
 // simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
-named_args!(simple_stmt(indent: usize) <StrSpan, Vec<Statement>>,
+named_args!(simple_stmt() <StrSpan, Vec<Statement>>,
   do_parse!(
-    count!(char!(' '), indent) >>
     stmts: separated_nonempty_list!(semicolon, call!(small_stmt)) >>
     opt!(semicolon) >> (
       stmts
@@ -313,22 +312,28 @@ named!(pub dotted_name<StrSpan, Vec<Name>>,
 named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
   alt!(
     do_parse!(
-      newline >>
-      new_indent: do_parse!(
-        count!(char!(' '), indent) >>
-        new_spaces: many1!(char!(' ')) >> ({
-          indent + new_spaces.len()
-        })
+      new_indent: peek!(
+        do_parse!(
+          newline >>
+          count!(char!(' '), indent) >>
+          new_spaces: many1!(char!(' ')) >> ({
+            indent + new_spaces.len()
+          })
+        )
       ) >>
       stmts: fold_many1!(
-        call!(statement, 0, new_indent),
+        do_parse!(
+          newline >>
+          count!(char!(' '), new_indent) >>
+          r: call!(statement, new_indent) >>
+          (r)
+        ),
         Vec::new(),
         |mut acc: Vec<_>, stmt| { acc.extend(stmt); acc }
-      ) >> (
-        stmts
-      )
+      ) >>
+      (stmts)
     )
-  | call!(simple_stmt, 0)
+  | call!(simple_stmt)
   )
 );
 named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)>,
@@ -344,20 +349,17 @@ named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)
 
 
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
-named_args!(compound_stmt(first_indent: usize, indent: usize) <StrSpan, CompoundStatement>,
-  preceded!(
-    count!(char!(' '), first_indent),
-    switch!(map!(peek!(call!(::nom::alpha)), |s| s.fragment.0),
-      "if" => call!(if_stmt, indent)
-    | "for" => call!(for_stmt, indent)
-    | "while" => call!(while_stmt, indent)
-    | "try" => call!(try_stmt, indent)
-    | "with" => call!(with_stmt, indent)
-    | "def" => call!(decorated, indent)
-    | "async" => alt!(
-        call!(decorated, indent) // ASYNC funcdef
-      | call!(for_stmt, indent)
-      )
+named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
+  switch!(map!(peek!(call!(::nom::alpha)), |s| s.fragment.0),
+    "if" => call!(if_stmt, indent)
+  | "for" => call!(for_stmt, indent)
+  | "while" => call!(while_stmt, indent)
+  | "try" => call!(try_stmt, indent)
+  | "with" => call!(with_stmt, indent)
+  | "def" => call!(decorated, indent)
+  | "async" => alt!(
+      call!(decorated, indent) // ASYNC funcdef
+    | call!(for_stmt, indent)
     )
   )
 );
@@ -376,7 +378,7 @@ named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
 
 // if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
-  dbg_dmp!(do_parse!(
+  do_parse!(
     tag!("if") >>
     if_block: call!(cond_and_block, indent) >>
     elif_blocks: many0!(
@@ -390,7 +392,7 @@ named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
       blocks.insert(0, if_block);
       CompoundStatement::If(blocks, else_block)
     })
-  ))
+  )
 );
 
 // while_stmt: 'while' test ':' suite ['else' ':' suite]
@@ -521,10 +523,9 @@ mod tests {
 
     #[test]
     fn test_statement_indent() {
-        assert_parse_eq(statement(make_strspan("del foo"), 0, 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(statement(make_strspan(" del foo"), 1, 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert!(statement(make_strspan("del foo"), 1, 1).is_err());
-        assert!(statement(make_strspan(" del foo"), 0, 0).is_err());
+        assert_parse_eq(statement(make_strspan("del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert!(statement(make_strspan(" del foo"), 0).is_err());
+        assert!(statement(make_strspan(" del foo"), 1).is_err());
     }
 
     #[test]
@@ -535,11 +536,17 @@ mod tests {
         assert!(block(make_strspan("\ndel foo"), 0).is_err());
         assert!(block(make_strspan("\ndel foo"), 1).is_err());
         assert!(block(make_strspan("\n del foo"), 1).is_err());
+
+        assert_parse_eq(block(make_strspan("\n del foo\n del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(block(make_strspan("\n  del foo\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(block(make_strspan("\n      del foo\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(block(make_strspan("\n del foo\ndel foo"), 0), Ok((make_strspan("\ndel foo"), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(block(make_strspan("\n del foo\n  del foo"), 0), Ok((make_strspan("\n  del foo"), vec![Statement::Del(vec!["foo".to_string()])])));
     }
 
     #[test]
     fn test_if() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar"), 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -556,7 +563,7 @@ mod tests {
 
     #[test]
     fn test_elif() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -579,7 +586,7 @@ mod tests {
 
     #[test]
     fn test_if_else() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelse:\n del qux"), 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -600,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_elif_else() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz\nelse:\n del qux"), 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -627,7 +634,7 @@ mod tests {
 
     #[test]
     fn test_nested_if() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar"), 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -656,7 +663,7 @@ mod tests {
 
     #[test]
     fn test_dangling_else_1() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar\nelse:\n del qux"), 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -689,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_dangling_else_2() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar\n else:\n  del qux"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar\n else:\n  del qux"), 0), Ok((make_strspan(""),
             CompoundStatement::If(
                 vec![
                     (
@@ -722,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_while() {
-        assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar"), 0), Ok((make_strspan(""),
             CompoundStatement::While(
                 Expression::Name("foo".to_string()),
                 vec![
@@ -735,7 +742,7 @@ mod tests {
 
     #[test]
     fn test_while_else() {
-        assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar\nelse:\n del qux"), 0), Ok((make_strspan(""),
             CompoundStatement::While(
                 Expression::Name("foo".to_string()),
                 vec![
@@ -752,7 +759,7 @@ mod tests {
 
     #[test]
     fn test_for() {
-        assert_parse_eq(compound_stmt(make_strspan("for foo in bar:\n del baz"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("for foo in bar:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::For {
                 async: false,
                 item: vec![Expression::Name("foo".to_string())],
@@ -767,7 +774,7 @@ mod tests {
 
     #[test]
     fn test_for_else() {
-        assert_parse_eq(compound_stmt(make_strspan("for foo in bar:\n del baz\nelse:\n del qux"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(compound_stmt(make_strspan("for foo in bar:\n del baz\nelse:\n del qux"), 0), Ok((make_strspan(""),
             CompoundStatement::For {
                 async: false,
                 item: vec![Expression::Name("foo".to_string())],
@@ -975,7 +982,7 @@ mod tests {
 
     #[test]
     fn test_import() {
-        assert_parse_eq(statement(make_strspan("import foo"), 0, 0), Ok((make_strspan(""),
+        assert_parse_eq(statement(make_strspan("import foo"), 0), Ok((make_strspan(""),
             vec![Statement::Import(Import::Import {
                 names: vec![(vec!["foo".to_string()], None)],
             })]
