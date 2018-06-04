@@ -440,8 +440,20 @@ fn format_expr(e: &Expression) -> String {
             format!("{}.{}", format_expr(e), n),
         Expression::Uop(op, ref e) =>
             format!("{}{}", op, format_expr(e)),
-        Expression::Bop(op, ref e1, ref e2) =>
-            format!("({}){}({})", format_expr(e1), op, format_expr(e2)),
+        Expression::Bop(op, ref e1, ref e2) => {
+            let f = |e:&_| match *e {
+                Expression::Ellipsis | Expression::None | Expression::True |
+                Expression::False | Expression::Int(_) | Expression::Complex { .. } |
+                Expression::Float(_) | Expression::String(_) | Expression::Bytes(_) |
+                Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
+                Expression::ListComp(_, _) | Expression::Generator(_, _) |
+                Expression::DictLiteral(_) | Expression::SetLiteral(_) |
+                Expression::ListLiteral(_) | Expression::TupleLiteral(_) =>
+                    format!("{}", format_expr(e)),
+                _ => format!("({})", format_expr(e)),
+            };
+            format!("{}{}{}", f(e1), op, f(e2))
+        },
         Expression::Ternary(e1, e2, e3) =>
             format!("({}) if ({}) else ({})", format_expr(e1), format_expr(e2), format_expr(e3)),
         Expression::Star(ref e) =>
