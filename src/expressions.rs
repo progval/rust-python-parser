@@ -2,7 +2,6 @@ use std::marker::PhantomData;
 
 use nom;
 use nom::{IResult, Err, Context, ErrorKind};
-use nom::Needed; // Required by escaped_transform, see https://github.com/Geal/nom/issues/780
 
 use helpers;
 use helpers::{StrSpan, name};
@@ -245,6 +244,92 @@ named!(atom_expr<StrSpan, Box<Expression>>,
   )
 );
 
+named!(escapedchar<StrSpan, Option<char>>,
+  preceded!(char!('\\'),
+    alt!(
+      char!('\n') => { |_| None }
+    | char!('\\') => { |_| Some('\\') }
+    | char!('\'') => { |_| Some('\'') }
+    | char!('"') => { |_| Some('"') }
+    | char!('b') => { |_| Some('\x07') } // BEL
+    | char!('f') => { |_| Some('\x0c') } // FF
+    | char!('n') => { |_| Some('\n') }
+    | char!('r') => { |_| Some('\r') }
+    | char!('t') => { |_| Some('\t') }
+    | char!('v') => { |_| Some('\x0b') } // VT
+    | tuple!(one_of!("01234567"), opt!(one_of!("01234567")), opt!(one_of!("01234567"))) => { |(c1, c2, c3): (char, Option<char>, Option<char>)|
+        match (c1.to_digit(8), c2.and_then(|c| c.to_digit(2)), c3.and_then(|c| c.to_digit(2))) {
+            (Some(d1), Some(d2), Some(d3)) => ::std::char::from_u32((d1 << 6) + (d2 << 3) + d3),
+            (Some(d1), Some(d2), None    ) => ::std::char::from_u32((d1 << 3) + d2),
+            (Some(d1), None,     None    ) => ::std::char::from_u32(d1),
+            _ => unreachable!(),
+        }
+      }
+    | preceded!(char!('x'), tuple!(one_of!("0123456789abcdef"), one_of!("0123456789abcdef"))) => { |(c1, c2): (char, char)|
+        match (c1.to_digit(16), c2.to_digit(16)) {
+            (Some(d1), Some(d2)) => ::std::char::from_u32((d1 << 8) + d2),
+            _ => unreachable!(),
+        }
+      }
+    | char!('N') => { |_| unimplemented!() } // TODO
+    | char!('u') => { |_| unimplemented!() } // TODO
+    | char!('U') => { |_| unimplemented!() } // TODO
+    )
+  )
+);
+
+named_args!(shortstring(quote: char) <StrSpan, String>,
+  fold_many0!(
+    alt!(
+      call!(Self::escapedchar)
+    | verify!(none_of!("\\"), |c:char| c != quote) => { |c:char| Some(c) }
+    ),
+    String::new(),
+    |mut acc:String, c:Option<char>| { match c { Some(c) => acc.push_str(&c.to_string()), None => () }; acc }
+  )
+);
+
+named_args!(longstring(quote: char) <StrSpan, String>,
+  fold_many0!(
+    alt!(
+      call!(Self::escapedchar)
+    | verify!(tuple!(peek!(take!(3)), none_of!("\\")), |(s,_):(StrSpan,_)| { s.fragment.0.chars().collect::<Vec<char>>() != vec![quote,quote,quote] }) => { |(_,c)| Some(c) }
+    ),
+    String::new(),
+    |mut acc:String, c:Option<char>| { match c { Some(c) => acc.push_str(&c.to_string()), None => () }; acc }
+  )
+);
+
+named!(string<StrSpan, PyString>,
+  do_parse!(
+    prefix: alt!(tag!("fr")|tag!("Fr")|tag!("fR")|tag!("FR")|tag!("rf")|tag!("rF")|tag!("Rf")|tag!("RF")|tag!("r")|tag!("u")|tag!("R")|tag!("U")|tag!("f")|tag!("F")|tag!("")) >>
+    content: alt!(
+      delimited!(
+        tag!("'''"),
+        call!(Self::longstring, '\''),
+        tag!("'''")
+      )
+    | delimited!(
+        tag!("\"\"\""),
+        call!(Self::longstring, '"'),
+        tag!("\"\"\"")
+      )
+    | delimited!(
+        char!('\''),
+        call!(Self::shortstring, '\''),
+        char!('\'')
+      )
+    | delimited!(
+        char!('"'),
+        call!(Self::shortstring, '"'),
+        char!('"')
+      )
+    ) >> (
+      PyString { prefix: prefix.to_string(), content: content.to_string() }
+    )
+  )
+);
+
 // atom: ('(' [yield_expr|testlist_comp] ')' |
 //       '[' [testlist_comp] ']' |
 //       '{' [dictorsetmaker] '}' |
@@ -256,20 +341,7 @@ named!(atom<StrSpan, Box<Expression>>,
   | tag!("True") => { |_| Expression::True }
   | tag!("False") => { |_| Expression::False }
   | name => { |n| Expression::Name(n) }
-  | separated_nonempty_list!(space_sep!(), delimited!(
-      char!('"'),
-      escaped_transform!(none_of!("\\\""), '\\', nom::anychar),
-      char!('"')
-    )) => { |strings: Vec<String>|
-      Expression::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
-    }
-  | separated_nonempty_list!(space_sep!(), delimited!(
-      char!('\''),
-      escaped_transform!(none_of!("\\'"), '\\', nom::anychar),
-      char!('\'')
-    )) => { |strings: Vec<String>|
-      Expression::String(strings.iter().fold("".to_string(), |mut acc, item| { acc.push_str(item); acc }))
-    }
+  | separated_nonempty_list!(spaces!(), call!(Self::string)) => { |s| Expression::String(s) }
   | ws3!(tuple!(char!('['), opt!(ws!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
   | ws3!(tuple!(char!('{'), opt!(ws!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
   | ws3!(tuple!(char!('('), opt!(ws!(char!(' '))), char!(')'))) => { |_| Expression::TupleLiteral(vec![]) }
@@ -605,13 +677,21 @@ mod tests {
     #[test]
     fn test_atom() {
         let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
+        let new_pystring = |s: &str| PyString { prefix: "".to_string(), content: s.to_string() };
         assert_parse_eq(atom(make_strspan("foo ")), Ok((make_strspan(" "), Box::new(Expression::Name("foo".to_string())))));
-        assert_parse_eq(atom(make_strspan(r#""foo" "#)), Ok((make_strspan(" "), Box::new(Expression::String("foo".to_string())))));
-        assert_parse_eq(atom(make_strspan(r#""foo" "bar""#)), Ok((make_strspan(""), Box::new(Expression::String("foobar".to_string())))));
-        assert_parse_eq(atom(make_strspan(r#""fo\"o" "#)), Ok((make_strspan(" "), Box::new(Expression::String("fo\"o".to_string())))));
-        assert_parse_eq(atom(make_strspan(r#""fo"o" "#)), Ok((make_strspan(r#"o" "#), Box::new(Expression::String("fo".to_string())))));
-        assert_parse_eq(atom(make_strspan(r#""fo \" o" "#)), Ok((make_strspan(" "), Box::new(Expression::String("fo \" o".to_string())))));
-        assert_parse_eq(atom(make_strspan(r#"'fo \' o' "#)), Ok((make_strspan(" "), Box::new(Expression::String("fo ' o".to_string())))));
+        assert_parse_eq(atom(make_strspan(r#""foo" "#)), Ok((make_strspan(" "), Box::new(Expression::String(vec![new_pystring("foo")])))));
+        assert_parse_eq(atom(make_strspan(r#""foo" "bar""#)), Ok((make_strspan(""), Box::new(Expression::String(vec![new_pystring("foo"), new_pystring("bar")])))));
+        assert_parse_eq(atom(make_strspan(r#""fo\"o" "#)), Ok((make_strspan(" "), Box::new(Expression::String(vec![new_pystring("fo\"o")])))));
+        assert_parse_eq(atom(make_strspan(r#""fo"o" "#)), Ok((make_strspan(r#"o" "#), Box::new(Expression::String(vec![new_pystring("fo")])))));
+        assert_parse_eq(atom(make_strspan(r#""fo \" o" "#)), Ok((make_strspan(" "), Box::new(Expression::String(vec![new_pystring("fo \" o")])))));
+        assert_parse_eq(atom(make_strspan(r#"'fo \' o' "#)), Ok((make_strspan(" "), Box::new(Expression::String(vec![new_pystring("fo ' o")])))));
+    }
+
+    #[test]
+    fn test_triple_quotes() {
+        let new_pystring = |s: &str| PyString { prefix: "".to_string(), content: s.to_string() };
+        let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
+        assert_parse_eq(atom(make_strspan(r#"'''fo ' o''' "#)), Ok((make_strspan(" "), Box::new(Expression::String(vec![new_pystring("fo ' o")])))));
     }
 
     #[test]

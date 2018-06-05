@@ -412,7 +412,11 @@ fn format_expr(e: &Expression) -> String {
         Expression::False => "False".to_string(),
         Expression::Name(ref n) => n.to_string(),
         Expression::Int(ref n) => n.to_string(),
-        Expression::String(ref s) => format!("{:?}", s), // FIXME: that's cheating
+        Expression::String(ref v) => {
+            space_join(v.iter().map(|PyString { prefix, content }|
+                format!("{}{:?}", prefix, content) // FIXME: that's cheating
+            ))
+        },
 
         Expression::DictLiteral(ref v) =>
             format!("{{{}}}", comma_join(v.iter().map(format_dictitem))),

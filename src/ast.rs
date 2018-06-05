@@ -111,7 +111,7 @@ impl fmt::Display for Uop {
             Uop::Plus => "+",
             Uop::Minus => "-",
             Uop::Invert => "~",
-            Uop::Not => "!",
+            Uop::Not => "not ",
         })
     }
 }
@@ -199,6 +199,11 @@ pub enum SetItem {
     Unique(Expression),
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PyString {
+    pub prefix: String,
+    pub content: String,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
@@ -210,7 +215,7 @@ pub enum Expression {
     Int(i64),
     Complex { real: f64, imaginary: f64 },
     Float(f64),
-    String(String),
+    String(Vec<PyString>),
     Bytes(Vec<u8>),
     DictLiteral(Vec<DictItem>),
     SetLiteral(Vec<SetItem>),

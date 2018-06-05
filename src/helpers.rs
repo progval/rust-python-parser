@@ -96,14 +96,21 @@ macro_rules! space_sep {
 named!(pub name<StrSpan, String>,
   map!(
     tuple!(
-      verify!(call!(::nom::anychar), |c| UnicodeXID::is_xid_start(c)),
+      alt!(char!('_') | verify!(call!(::nom::anychar), |c| UnicodeXID::is_xid_start(c))),
       take_while!(call!(|c| UnicodeXID::is_xid_continue(c)))
     ), |(c, s)| format!("{}{}", c, s.fragment)
   )
 );
 
 named!(pub newline<StrSpan, ()>,
-  map!(preceded!(space, char!('\n')), |_| ())
+  map!(
+    tuple!(
+      space,
+      opt!(preceded!(char!('#'), many0!(none_of!("\n")))),
+      char!('\n')
+    ),
+    |_| ()
+  )
 );
 
 named!(pub semicolon<StrSpan, ()>,
