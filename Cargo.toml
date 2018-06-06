@@ -13,6 +13,7 @@ nom = "^4.0"
 #nom_locate = { path = "../nom_locate/" }
 nom_locate = { git = "https://github.com/ProgVal/nom_locate", branch = "nom4" }
 unicode-xid = "^0.1"
+#unicode_names = "^0.1.7"
 
 [dev-dependencies]
 pretty_assertions = "^0.4"

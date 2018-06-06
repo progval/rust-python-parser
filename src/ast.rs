@@ -336,7 +336,7 @@ pub struct Funcdef {
 pub struct Classdef {
     pub decorators: Vec<Decorator>,
     pub name: String,
-    pub parameters: Arglist,
+    pub arguments: Arglist,
     pub code: Vec<Statement>,
 }
 

@@ -74,11 +74,11 @@ named_args!(classdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, Compou
     tag!("class") >>
     space_sep2 >>
     name: name >>
-    parameters: ws2!(delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')'))) >>
+    arguments: ws2!(delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')'))) >>
     ws2!(char!(':')) >> 
     code: call!(block, indent) >> (
       CompoundStatement::Classdef(Classdef {
-          decorators, name, parameters, code
+          decorators, name, arguments, code
       })
     )
   )

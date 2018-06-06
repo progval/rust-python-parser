@@ -9,6 +9,7 @@ extern crate nom_locate;
 extern crate pretty_assertions;
 
 extern crate unicode_xid;
+//extern crate unicode_names;
 
 #[macro_use]
 mod helpers;
@@ -17,6 +18,8 @@ mod expressions;
 #[macro_use]
 mod statements;
 mod functions;
+mod strings;
+mod bytes;
 pub mod ast;
 pub mod visitors;
 

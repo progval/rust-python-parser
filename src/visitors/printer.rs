@@ -247,7 +247,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
             s
         }
         CompoundStatement::Funcdef(ref funcdef) => format_funcdef(indent, funcdef),
-        CompoundStatement::Classdef(_) => unimplemented!()
+        CompoundStatement::Classdef(ref classdef) => format_classdef(indent, classdef),
     }
 }
 
@@ -282,6 +282,22 @@ fn format_funcdef(indent: usize, funcdef: &Funcdef) -> String {
         s.push_str(" -> ");
         s.push_str(&format_expr(ret));
     }
+    s.push_str(":\n");
+    s.push_str(&format_block(indent+4, code));
+    s.push_str("\n");
+    s
+}
+
+fn format_classdef(indent: usize, classdef: &Classdef) -> String {
+    let Classdef { ref decorators, ref name, ref arguments, ref code } = classdef;
+    let mut s = "\n".to_string();
+    s.push_str(&format_decorators(indent, decorators));
+    push_indent(indent, &mut s);
+    s.push_str("class ");
+    s.push_str(name);
+    s.push_str("(");
+    s.push_str(&format_args(arguments));
+    s.push_str(")");
     s.push_str(":\n");
     s.push_str(&format_block(indent+4, code));
     s.push_str("\n");
