@@ -439,8 +439,9 @@ fn format_expr(e: &Expression) -> String {
         Expression::False => "False".to_string(),
         Expression::Name(ref n) => n.to_string(),
         Expression::Int(ref n) => n.to_string(),
-        Expression::Complex(_, _) => unimplemented!(),
+        Expression::ImaginaryInt(ref n) => format!("{}j", n),
         Expression::Float(_) => unimplemented!(),
+        Expression::ImaginaryFloat(_) => unimplemented!(),
         Expression::String(ref v) => {
             space_join(v.iter().map(|PyString { prefix, content }|
                 format!("{}{:?}", prefix, content) // FIXME: that's cheating
@@ -477,7 +478,8 @@ fn format_expr(e: &Expression) -> String {
         Expression::Bop(op, ref e1, ref e2) => {
             let f = |e:&_| match *e {
                 Expression::Ellipsis | Expression::None | Expression::True |
-                Expression::False | Expression::Int(_) | Expression::Complex { .. } |
+                Expression::False | Expression::Int(_) |
+                Expression::ImaginaryInt(_) | Expression::ImaginaryFloat(_) |
                 Expression::Float(_) | Expression::String(_) | Expression::Bytes(_) |
                 Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
                 Expression::ListComp(_, _) | Expression::Generator(_, _) |

@@ -9,7 +9,7 @@ use helpers::{AreNewlinesSpaces, NewlinesAreSpaces};
 use functions::varargslist;
 use bytes::bytes;
 use strings::string;
-use numbers::integer;
+use numbers::number;
 use ast::*;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -256,7 +256,7 @@ named!(atom<StrSpan, Box<Expression>>,
       for b in v { v2.extend(b) }
       Expression::Bytes(v2)
     }}
-  | integer => { |i| Expression::Int(i) }
+  | number
   | name => { |n| Expression::Name(n) }
   | ws3!(tuple!(char!('['), opt!(ws!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
   | ws3!(tuple!(char!('{'), opt!(ws!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
