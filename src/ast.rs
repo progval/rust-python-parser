@@ -213,7 +213,7 @@ pub enum Expression {
     False,
     Name(Name),
     Int(i64),
-    Complex { real: f64, imaginary: f64 },
+    Complex(f64, f64),
     Float(f64),
     String(Vec<PyString>),
     Bytes(Vec<u8>),
@@ -260,7 +260,7 @@ pub enum Import {
     Import { names: Vec<(Vec<Name>, Option<Name>)> },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AugAssignOp {
     Add,
     Sub,
@@ -275,6 +275,26 @@ pub enum AugAssignOp {
     Rshift,
     Power,
     Floordiv,
+}
+
+impl fmt::Display for AugAssignOp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "{}", match self {
+            AugAssignOp::Add => "+=",
+            AugAssignOp::Sub => "-=",
+            AugAssignOp::Mult => "*=",
+            AugAssignOp::MatMult => "@=",
+            AugAssignOp::Div => "/=",
+            AugAssignOp::Mod => "%=",
+            AugAssignOp::BitAnd => "&=",
+            AugAssignOp::BitOr => "|=",
+            AugAssignOp::BitXor => "^=",
+            AugAssignOp::Lshift => "<<=",
+            AugAssignOp::Rshift => ">>=",
+            AugAssignOp::Power => "**=",
+            AugAssignOp::Floordiv => "//=",
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

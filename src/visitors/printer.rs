@@ -111,8 +111,19 @@ fn format_statement(indent: usize, stmt: &Statement) -> String {
             }
             s.push_str("\n");
         },
+        Statement::TypedAssignment(ref lhs, ref typed, ref rhs) => {
+            s.push_str(&format!("{}:{} = {}\n",
+                comma_join(lhs.iter().map(format_expr)),
+                format_expr(typed),
+                comma_join(rhs.iter().map(format_expr))));
+        },
+        Statement::AugmentedAssignment(ref lhs, op, ref rhs) => {
+            s.push_str(&format!("{} {} {}\n",
+                comma_join(lhs.iter().map(format_expr)),
+                op,
+                comma_join(rhs.iter().map(format_expr))));
+        },
         Statement::Compound(ref stmt) => s.push_str(&format_compound_statement(indent, stmt)),
-        _ => unimplemented!(),
     }
     s
 }
@@ -412,11 +423,14 @@ fn format_expr(e: &Expression) -> String {
         Expression::False => "False".to_string(),
         Expression::Name(ref n) => n.to_string(),
         Expression::Int(ref n) => n.to_string(),
+        Expression::Complex(_, _) => unimplemented!(),
+        Expression::Float(_) => unimplemented!(),
         Expression::String(ref v) => {
             space_join(v.iter().map(|PyString { prefix, content }|
                 format!("{}{:?}", prefix, content) // FIXME: that's cheating
             ))
         },
+        Expression::Bytes(_) => unimplemented!(),
 
         Expression::DictLiteral(ref v) =>
             format!("{{{}}}", comma_join(v.iter().map(format_dictitem))),
@@ -462,7 +476,9 @@ fn format_expr(e: &Expression) -> String {
             format!("({}) if ({}) else ({})", format_expr(e1), format_expr(e2), format_expr(e3)),
         Expression::Star(ref e) =>
             format!("*{}", format_expr(e)),
-        _ => unimplemented!(),
+        Expression::Yield(_) => unimplemented!(),
+        Expression::YieldFrom(_) => unimplemented!(),
+        Expression::Lambdef(_, _) => unimplemented!(),
     }
 }
 
