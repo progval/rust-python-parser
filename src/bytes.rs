@@ -16,7 +16,7 @@ named!(escapedchar<StrSpan, Option<u8>>,
     | char!('t') => { |_| Some(b'\t') }
     | char!('v') => { |_| Some(b'\x0b') } // VT
     | tuple!(one_of!("01234567"), opt!(one_of!("01234567")), opt!(one_of!("01234567"))) => { |(c1, c2, c3): (char, Option<char>, Option<char>)|
-        match (c1.to_digit(8), c2.and_then(|c| c.to_digit(2)), c3.and_then(|c| c.to_digit(2))) {
+        match (c1.to_digit(8), c2.and_then(|c| c.to_digit(8)), c3.and_then(|c| c.to_digit(8))) {
             (Some(d1), Some(d2), Some(d3)) => Some(min((d1 << 6) + (d2 << 3) + d3, 255) as u8),
             (Some(d1), Some(d2), None    ) => Some(((d1 << 3) + d2) as u8),
             (Some(d1), None,     None    ) => Some(d1 as u8),

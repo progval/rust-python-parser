@@ -15,7 +15,7 @@ named!(escapedchar<StrSpan, Option<char>>,
     | char!('t') => { |_| Some('\t') }
     | char!('v') => { |_| Some('\x0b') } // VT
     | tuple!(one_of!("01234567"), opt!(one_of!("01234567")), opt!(one_of!("01234567"))) => { |(c1, c2, c3): (char, Option<char>, Option<char>)|
-        match (c1.to_digit(8), c2.and_then(|c| c.to_digit(2)), c3.and_then(|c| c.to_digit(2))) {
+        match (c1.to_digit(8), c2.and_then(|c| c.to_digit(8)), c3.and_then(|c| c.to_digit(8))) {
             (Some(d1), Some(d2), Some(d3)) => ::std::char::from_u32((d1 << 6) + (d2 << 3) + d3),
             (Some(d1), Some(d2), None    ) => ::std::char::from_u32((d1 << 3) + d2),
             (Some(d1), None,     None    ) => ::std::char::from_u32(d1),
@@ -32,8 +32,21 @@ named!(escapedchar<StrSpan, Option<char>>,
     //    unicode_names::character(name)
     //  }
     | char!('N') => { |_| unimplemented!() }
-    | char!('u') => { |_| unimplemented!() } // TODO
-    | char!('U') => { |_| unimplemented!() } // TODO
+    | preceded!(char!('u'), count!(one_of!("0123456789abcdef"), 4)) => { |v: Vec<char>| {
+        let it: Vec<u32> = v.iter().map(|c| c.to_digit(16).unwrap()).collect();
+        if let [d1, d2, d3, d4] = &it[..] {
+            ::std::char::from_u32((d1 << 24) + (d2 << 16) + (d3 << 8) + d4)
+        }
+        else { unreachable!() }
+      }}
+    | preceded!(char!('U'), count!(one_of!("0123456789abcdef"), 8)) => { |v: Vec<char>| {
+        let it: Vec<u32> = v.iter().map(|c| c.to_digit(16).unwrap()).collect();
+        if let [d1, d2, d3, d4, d5, d6, d7, d8] = &it[..] {
+            ::std::char::from_u32((d1 << 56) + (d2 << 48) + (d3 << 40) + (d4 << 32) +
+                                  (d5 << 24) + (d6 << 16) + (d7 << 8) + d8)
+        }
+        else { unreachable!() }
+      }}
     )
   )
 );
