@@ -1,4 +1,7 @@
 use std::fmt;
+use num_bigint::BigUint;
+
+pub type IntegerType = BigUint;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArgumentError {
@@ -212,7 +215,7 @@ pub enum Expression {
     True,
     False,
     Name(Name),
-    Int(i64),
+    Int(BigUint),
     Complex(f64, f64),
     Float(f64),
     String(Vec<PyString>),

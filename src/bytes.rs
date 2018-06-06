@@ -23,7 +23,7 @@ named!(escapedchar<StrSpan, Option<u8>>,
             _ => unreachable!(),
         }
       }
-    | preceded!(char!('x'), tuple!(one_of!("0123456789abcdef"), one_of!("0123456789abcdef"))) => { |(c1, c2): (char, char)|
+    | preceded!(char!('x'), tuple!(one_of!("0123456789abcdefABCDEF"), one_of!("0123456789abcdefABCDEF"))) => { |(c1, c2): (char, char)|
         match (c1.to_digit(16), c2.to_digit(16)) {
             (Some(d1), Some(d2)) => Some(((d1 << 8) + d2) as u8),
             _ => unreachable!(),

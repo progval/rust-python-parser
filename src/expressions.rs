@@ -1,6 +1,5 @@
 use std::marker::PhantomData;
 
-use nom;
 use nom::{IResult, Err, Context, ErrorKind};
 //use unicode_names;
 
@@ -10,6 +9,7 @@ use helpers::{AreNewlinesSpaces, NewlinesAreSpaces};
 use functions::varargslist;
 use bytes::bytes;
 use strings::string;
+use numbers::integer;
 use ast::*;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -23,13 +23,6 @@ enum RawArgument {
 pub(crate) struct ExpressionParser<ANS: AreNewlinesSpaces> {
     _phantom: PhantomData<ANS>,
 }
-
-named!(number<StrSpan, Expression>,
-  alt!(
-    many1!(call!(nom::digit)) => {|v:Vec<StrSpan>| Expression::Int(v.into_iter().map(|s| s.fragment.to_string()).collect::<Vec<_>>().join("").parse::<i64>().unwrap())} // FIXME: this is ridiculous...
-  // TODO: support more number types
-  )
-);
 
 impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 
@@ -263,6 +256,7 @@ named!(atom<StrSpan, Box<Expression>>,
       for b in v { v2.extend(b) }
       Expression::Bytes(v2)
     }}
+  | integer => { |i| Expression::Int(i) }
   | name => { |n| Expression::Name(n) }
   | ws3!(tuple!(char!('['), opt!(ws!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
   | ws3!(tuple!(char!('{'), opt!(ws!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
@@ -285,7 +279,6 @@ named!(atom<StrSpan, Box<Expression>>,
   | ws3!(delimited!(char!('['), ws!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(']')))
-  | ws3!(number)
   ), |e| Box::new(e))
 );
 
@@ -593,6 +586,7 @@ named!(pub yield_expr<StrSpan, Expression>,
 
 #[cfg(test)]
 mod tests {
+    use nom;
     use helpers::{NewlinesAreNotSpaces, make_strspan, assert_parse_eq};
     use super::*;
 

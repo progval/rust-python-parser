@@ -10,6 +10,8 @@ extern crate pretty_assertions;
 
 extern crate unicode_xid;
 //extern crate unicode_names;
+extern crate num_traits;
+extern crate num_bigint;
 
 #[macro_use]
 mod helpers;
@@ -20,6 +22,7 @@ mod statements;
 mod functions;
 mod strings;
 mod bytes;
+mod numbers;
 pub mod ast;
 pub mod visitors;
 
