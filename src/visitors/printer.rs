@@ -440,8 +440,8 @@ fn format_expr(e: &Expression) -> String {
         Expression::Name(ref n) => n.to_string(),
         Expression::Int(ref n) => n.to_string(),
         Expression::ImaginaryInt(ref n) => format!("{}j", n),
-        Expression::Float(_) => unimplemented!(),
-        Expression::ImaginaryFloat(_) => unimplemented!(),
+        Expression::Float(ref n) => n.to_string(),
+        Expression::ImaginaryFloat(ref n) => format!("{}j", n),
         Expression::String(ref v) => {
             space_join(v.iter().map(|PyString { prefix, content }|
                 format!("{}{:?}", prefix, content) // FIXME: that's cheating

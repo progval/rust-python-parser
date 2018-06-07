@@ -612,6 +612,9 @@ mod tests {
         assert_parse_eq(atom(make_strspan(r#"'fo \' o' "#)), Ok((make_strspan(" "),
             Box::new(Expression::String(vec![new_pystring("fo ' o")])))
         ));
+        assert_parse_eq(atom(make_strspan(r#"r'fo \' o' "#)), Ok((make_strspan(" "),
+            Box::new(Expression::String(vec![PyString { prefix: "r".to_string(), content: "fo \\' o".to_string() }])))
+        ));
     }
 
     #[test]
@@ -641,6 +644,9 @@ mod tests {
         ));
         assert_parse_eq(atom(make_strspan(r#"b'fo \' o' "#)), Ok((make_strspan(" "),
             Box::new(Expression::Bytes(b"fo ' o".to_vec())))
+        ));
+        assert_parse_eq(atom(make_strspan(r#"br'fo \' o' "#)), Ok((make_strspan(" "),
+            Box::new(Expression::Bytes(b"fo \\' o".to_vec())))
         ));
     }
 

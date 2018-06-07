@@ -1,3 +1,5 @@
+use nom::anychar;
+
 use helpers::StrSpan;
 use ast::*;
 
@@ -73,14 +75,53 @@ named_args!(longstring(quote: char) <StrSpan, String>,
   )
 );
 
+named_args!(shortrawstring(quote: char) <StrSpan, String>,
+  fold_many0!(
+    alt!(
+      tuple!(char!('\\'), anychar) => { |(c1,c2)| (c1, Some(c2)) }
+    | verify!(none_of!("\\"), |c:char| c != quote) => { |c:char| (c, None) }
+    ),
+    String::new(),
+    |mut acc:String, (c1,c2):(char, Option<char>)| {
+      acc.push(c1);
+      match c2 { Some(c) => acc.push(c), None => () };
+      acc
+    }
+  )
+);
+
+named_args!(longrawstring(quote: char) <StrSpan, String>,
+  fold_many0!(
+    alt!(
+      tuple!(char!('\\'), anychar) => { |(c1,c2)| (c1, Some(c2)) }
+    | verify!(tuple!(peek!(take!(3)), none_of!("\\")), |(s,_):(StrSpan,_)| { s.fragment.0.chars().collect::<Vec<char>>() != vec![quote,quote,quote] }) => { |(_,c)| (c, None) }
+    ),
+    String::new(),
+    |mut acc:String, (c1,c2):(char, Option<char>)| {
+      acc.push(c1);
+      match c2 { Some(c) => acc.push(c), None => () };
+      acc
+    }
+  )
+);
+
 named!(pub string<StrSpan, PyString>,
   do_parse!(
     prefix: alt!(tag!("fr")|tag!("Fr")|tag!("fR")|tag!("FR")|tag!("rf")|tag!("rF")|tag!("Rf")|tag!("RF")|tag!("r")|tag!("u")|tag!("R")|tag!("U")|tag!("f")|tag!("F")|tag!("")) >>
-    content: alt!(
-      delimited!(tag!("'''"), call!(longstring, '\''), tag!("'''"))
-    | delimited!(tag!("\"\"\""), call!(longstring, '"'), tag!("\"\"\""))
-    | delimited!(char!('\''), call!(shortstring, '\''), char!('\''))
-    | delimited!(char!('"'), call!(shortstring, '"'), char!('"'))
+    is_raw: call!(|i, s:StrSpan| Ok((i, s.fragment.0.contains('r') || s.fragment.0.contains('R'))), prefix) >>
+    content: switch!(call!(|i| Ok((i, is_raw))),
+      false => alt!(
+        delimited!(tag!("'''"), call!(longstring, '\''), tag!("'''"))
+      | delimited!(tag!("\"\"\""), call!(longstring, '"'), tag!("\"\"\""))
+      | delimited!(char!('\''), call!(shortstring, '\''), char!('\''))
+      | delimited!(char!('"'), call!(shortstring, '"'), char!('"'))
+      )
+    | true => alt!(
+        delimited!(tag!("'''"), call!(longrawstring, '\''), tag!("'''"))
+      | delimited!(tag!("\"\"\""), call!(longrawstring, '"'), tag!("\"\"\""))
+      | delimited!(char!('\''), call!(shortrawstring, '\''), char!('\''))
+      | delimited!(char!('"'), call!(shortrawstring, '"'), char!('"'))
+      )
     ) >> (PyString { prefix: prefix.to_string(), content: content.to_string() })
   )
 );
