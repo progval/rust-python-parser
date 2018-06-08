@@ -224,8 +224,8 @@ named!(atom_expr<StrSpan, Box<Expression>>,
     lhs: call!(Self::atom) >>
     trailers: fold_many0!(
       alt!(
-        delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')) => { |args| Trailer::Call(args) }
-      | delimited!(char!('['), ws!(separated_list!(char!(','), call!(ExpressionParser::<NewlinesAreSpaces>::subscript))), char!(']')) => { |i| Trailer::Subscript(i) }
+        delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')) => { |args| Trailer::Call(args) }
+      | delimited!(char!('['), ws4!(separated_list!(char!(','), call!(ExpressionParser::<NewlinesAreSpaces>::subscript))), char!(']')) => { |i| Trailer::Subscript(i) }
       | preceded!(ws3!(char!('.')), name) => { |name| Trailer::Attribute(name) }
       ),
       lhs,
@@ -258,13 +258,13 @@ named!(atom<StrSpan, Box<Expression>>,
     }}
   | number
   | name => { |n| Expression::Name(n) }
-  | ws3!(tuple!(char!('['), opt!(ws!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
-  | ws3!(tuple!(char!('{'), opt!(ws!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
-  | ws3!(tuple!(char!('('), opt!(ws!(char!(' '))), char!(')'))) => { |_| Expression::TupleLiteral(vec![]) }
-  | ws3!(delimited!(char!('{'), ws!(map!(
+  | ws3!(tuple!(char!('['), ws4!(opt!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
+  | ws3!(tuple!(char!('{'), ws4!(opt!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
+  | ws3!(tuple!(char!('('), ws4!(opt!(char!(' '))), char!(')'))) => { |_| Expression::TupleLiteral(vec![]) }
+  | ws3!(delimited!(char!('{'), ws4!(map!(
       call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker), |e:Box<_>| *e
     )), char!('}')))
-  | ws3!(delimited!(char!('('), ws!(
+  | ws3!(delimited!(char!('('), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(')'))) => { |e|
       match e {
@@ -273,10 +273,10 @@ named!(atom<StrSpan, Box<Expression>>,
           _ => unreachable!(),
       }
     }
-  | ws3!(delimited!(char!('('), ws!(
+  | ws3!(delimited!(char!('('), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::yield_expr)
     ), char!(')')))
-  | ws3!(delimited!(char!('['), ws!(
+  | ws3!(delimited!(char!('['), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(']')))
   ), |e| Box::new(e))
@@ -361,13 +361,13 @@ impl ExpressionParser<NewlinesAreSpaces> {
 named!(dictorsetmaker<StrSpan, Box<Expression>>,
   alt!(
     do_parse!(
-      ws!(tag!("**")) >>
+      ws4!(tag!("**")) >>
       e: map!(call!(Self::expr), |e: Box<_>| DictItem::Star(*e)) >>
       r: call!(Self::dictmaker, e) >>
       (r)
     )
   | do_parse!(
-      ws!(tag!("*")) >>
+      ws4!(tag!("*")) >>
       e: map!(call!(Self::expr), |e: Box<_>| SetItem::Star(*e)) >>
       r: call!(Self::setmaker, e) >>
       (r)
@@ -376,7 +376,7 @@ named!(dictorsetmaker<StrSpan, Box<Expression>>,
       key: call!(Self::test) >>
       r: alt!(
         do_parse!(
-          ws!(char!(':')) >>
+          ws4!(char!(':')) >>
           item: map!(call!(Self::test), |value: Box<_>| DictItem::Unique(*key.clone(), *value)) >> // FIXME: do not clone
           r: call!(Self::dictmaker, item) >>
           (r)
@@ -430,14 +430,14 @@ named_args!(setmaker(item1: SetItem) <StrSpan, Box<Expression>>,
 );
 
 named!(dictitem<StrSpan, DictItem>,
-  ws!(alt!(
+  ws4!(alt!(
     preceded!(tag!("**"), call!(Self::expr)) => { |e:Box<_>| DictItem::Star(*e) }
   | tuple!(call!(Self::test), char!(':'), call!(Self::test)) => { |(e1,_,e2): (Box<_>,_,Box<_>)| DictItem::Unique(*e1,*e2) }
   ))
 );
 
 named!(setitem<StrSpan, SetItem>,
-  ws!(alt!(
+  ws4!(alt!(
     preceded!(tag!("*"), call!(Self::expr)) => { |e:Box<_>| SetItem::Star(*e) }
   |call!(Self::test) => { |e:Box<_>| SetItem::Unique(*e) }
   ))
@@ -491,7 +491,7 @@ fn build_arglist(input: StrSpan, args: Vec<RawArgument>) -> IResult<StrSpan, Arg
 }
 named!(pub arglist<StrSpan, Arglist>,
   do_parse!(
-    args: separated_list!(ws!(char!(',')),
+    args: separated_list!(ws4!(char!(',')),
       alt!(
         preceded!(tag!("**"), call!(Self::test)) => { |kwargs: Box<_>| RawArgument::Kwargs(*kwargs) }
       | preceded!(char!('*'), call!(Self::test)) => { |args: Box<_>| RawArgument::Starargs(*args) }
@@ -1286,6 +1286,10 @@ mod tests {
         )));
 
         assert_parse_eq(atom_expr(make_strspan("foo(bar, baz +\nqux)")), Ok((make_strspan(""),
+            ast.clone()
+        )));
+
+        assert_parse_eq(atom_expr(make_strspan("foo(bar, baz +\n # foobar\nqux)")), Ok((make_strspan(""),
             ast
         )));
     }
@@ -1312,6 +1316,32 @@ mod tests {
             Box::new(Expression::SetLiteral(vec![
                 SetItem::Unique(Expression::Name("foo".to_string())),
                 SetItem::Star(Expression::Name("bar".to_string())),
+                SetItem::Unique(Expression::Name("baz".to_string())),
+            ]))
+        )));
+    }
+
+    #[test]
+    fn test_setlit_comment() {
+        let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
+
+        assert_parse_eq(atom(make_strspan("{foo, \n #bar\n\n\n baz}")), Ok((make_strspan(""),
+            Box::new(Expression::SetLiteral(vec![
+                SetItem::Unique(Expression::Name("foo".to_string())),
+                SetItem::Unique(Expression::Name("baz".to_string())),
+            ]))
+        )));
+
+        assert_parse_eq(atom(make_strspan("{\n #foo\n\n bar, baz}")), Ok((make_strspan(""),
+            Box::new(Expression::SetLiteral(vec![
+                SetItem::Unique(Expression::Name("bar".to_string())),
+                SetItem::Unique(Expression::Name("baz".to_string())),
+            ]))
+        )));
+
+        assert_parse_eq(atom(make_strspan("{ bar, baz \n}")), Ok((make_strspan(""),
+            Box::new(Expression::SetLiteral(vec![
+                SetItem::Unique(Expression::Name("bar".to_string())),
                 SetItem::Unique(Expression::Name("baz".to_string())),
             ]))
         )));

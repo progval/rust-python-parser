@@ -10,6 +10,7 @@ pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
 
 named!(pub space<StrSpan, StrSpan>, eat_separator!(&b" \t"[..]));
 
+/// Like `ws!()`, but does not allow newlines.
 #[macro_export]
 macro_rules! ws2 (
   ($i:expr, $($args:tt)*) => (
@@ -30,8 +31,29 @@ macro_rules! ws2 (
   )
 );
 
+/// Like `ws!()`, but ignores comments as well
+#[macro_export]
+macro_rules! ws4 (
+  ($i:expr, $($args:tt)*) => (
+    {
+      use nom::Convert;
+      use nom::Err;
+
+      match sep!($i, $crate::helpers::spaces, $($args)*) {
+        Err(e) => Err(e),
+        Ok((i1,o))    => {
+          match $crate::helpers::spaces(i1) {
+            Err(e) => Err(Err::convert(e)),
+            Ok((i2,_))    => Ok((i2, o))
+          }
+        }
+      }
+    }
+  )
+);
+
 named!(pub spaces<StrSpan, ()>,
-  map!(many0!(one_of!(" \t\n")), |_| ())
+  map!(many0!(alt!(map!(one_of!(" \t"), |_|()) | newline)), |_| ())
 );
 
 named!(pub spaces2<StrSpan, ()>,

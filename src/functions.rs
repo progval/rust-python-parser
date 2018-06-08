@@ -19,7 +19,7 @@ named_args!(decorator(indent: usize) <StrSpan, Decorator>,
     ws2!(do_parse!(
       char!('@') >>
       name: call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name) >>
-      args: opt!(ws2!(delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
+      args: opt!(ws2!(delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
       newline >> (
         Decorator { name, args }
       )
@@ -74,7 +74,7 @@ named_args!(classdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, Compou
     tag!("class") >>
     space_sep2 >>
     name: name >>
-    arguments: ws2!(delimited!(char!('('), ws!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')'))) >>
+    arguments: ws2!(delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')'))) >>
     ws2!(char!(':')) >> 
     code: call!(block, indent) >> (
       CompoundStatement::Classdef(Classdef {
@@ -95,7 +95,7 @@ trait IsItTyped {
     fn fpdef<'a>(input: StrSpan<'a>) -> IResult<StrSpan<'a>, Self::Return, u32>;
 
     fn fpdef_with_default<'a>(i: StrSpan<'a>) -> IResult<StrSpan<'a>, (Self::Return, Option<Box<Expression>>), u32> {
-        ws!(i, tuple!(
+        ws4!(i, tuple!(
             Self::fpdef,
             opt!(
                 preceded!(
@@ -116,7 +116,7 @@ impl IsItTyped for Typed {
     type List = TypedArgsList;
 
     named!(fpdef<StrSpan, Self::Return>,
-      ws!(tuple!(name,
+      ws4!(tuple!(name,
         opt!(preceded!(char!(':'), call!(ExpressionParser::<NewlinesAreSpaces>::test)))
       ))
     );
@@ -171,7 +171,7 @@ impl IsItTyped for Untyped {
 
 // parameters: '(' [typedargslist] ')'
 named!(parameters<StrSpan, TypedArgsList>,
-  map!(delimited!(char!('('), opt!(ws!(typedargslist)), char!(')')), |o| o.unwrap_or_default())
+  map!(delimited!(char!('('), opt!(ws4!(typedargslist)), char!(')')), |o| o.unwrap_or_default())
 );
 
 // typedargslist: (tfpdef ['=' test] (',' tfpdef ['=' test])* [',' [
@@ -195,7 +195,7 @@ struct ParamlistParser<IIT: IsItTyped> {
     phantom: PhantomData<IIT>
 }
 impl<IIT: IsItTyped> ParamlistParser<IIT> {
-    named!(parse<StrSpan, IIT::List>, ws!(
+    named!(parse<StrSpan, IIT::List>, ws4!(
       alt!(
       /***************************
        * Case 1: only **kwargs
@@ -229,7 +229,7 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
            * tfpdef ['=' test] (',' tfpdef ['=' test])*
            */
           positional_args: separated_nonempty_list!(char!(','), call!(IIT::fpdef_with_default)) >>
-          r: opt!(ws!(preceded!(char!(','), opt!( // FIXME: ws! is needed here because it does not traverse opt!
+          r: opt!(ws4!(preceded!(char!(','), opt!( // FIXME: ws! is needed here because it does not traverse opt!
 
             alt!(
               /************
@@ -248,7 +248,7 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
                 char!('*') >>
                 star_args: opt!(call!(IIT::fpdef)) >>
                 keyword_args: opt!(preceded!(char!(','), separated_nonempty_list!(char!(','), call!(IIT::fpdef_with_default)))) >>
-                star_kwargs: opt!(ws!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: ws! is needed here because it does not traverse opt!
+                star_kwargs: opt!(ws4!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: ws! is needed here because it does not traverse opt!
                   IIT::make_list(positional_args.clone(), Some(star_args), keyword_args.unwrap_or(Vec::new()), star_kwargs.unwrap_or(None)) // FIXME: do not clone
                 )
               )
