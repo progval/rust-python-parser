@@ -13,15 +13,14 @@ use ast::*;
 
 // decorator: '@' dotted_name [ '(' [arglist] ')' ] NEWLINE
 named_args!(decorator(indent: usize) <StrSpan, Decorator>,
-  preceded!(count!(char!(' '), indent),
-    ws2!(do_parse!(
-      char!('@') >>
-      name: call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name) >>
-      args: opt!(ws2!(delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
-      newline >> (
-        Decorator { name, args }
-      )
-    ))
+  do_parse!(
+    count!(char!(' '), indent) >>
+    char!('@') >>
+    name: ws2!(call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name)) >>
+    args: opt!(ws2!(delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
+    newline >> (
+      Decorator { name, args }
+    )
   )
 );
 

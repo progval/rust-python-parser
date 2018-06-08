@@ -18,7 +18,7 @@ macro_rules! call_test {
 named_args!(pub statement(indent: usize) <StrSpan, Vec<Statement>>,
   alt!(
     call!(compound_stmt, indent) => { |stmt| vec![Statement::Compound(Box::new(stmt))] }
-  | call!(simple_stmt)
+  | preceded!(count!(char!(' '), indent), call!(simple_stmt))
   )
 );
 
@@ -324,7 +324,6 @@ named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
       stmts: fold_many1!(
         do_parse!(
           newline >>
-          count!(char!(' '), new_indent) >>
           r: call!(statement, new_indent) >>
           (r)
         ),
@@ -350,7 +349,7 @@ named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)
 
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
-  switch!(peek!(first_word),
+  switch!(peek!(ws2!(first_word)),
     "if" => call!(if_stmt, indent)
   | "for" => call!(for_stmt, indent)
   | "while" => call!(while_stmt, indent)
@@ -381,6 +380,7 @@ named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
 // if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
+    count!(char!(' '), indent) >>
     tag!("if") >>
     if_block: call!(cond_and_block, indent) >>
     elif_blocks: many0!(
@@ -400,6 +400,7 @@ named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // while_stmt: 'while' test ':' suite ['else' ':' suite]
 named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
+    count!(char!(' '), indent) >>
     tag!("while") >>
     while_block: call!(cond_and_block, indent) >>
     else_block: call!(else_block, indent) >> ({
@@ -412,6 +413,7 @@ named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
 named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
+    count!(char!(' '), indent) >>
     async: opt!(tuple!(tag!("async"), space_sep2)) >>
     tag!("for") >>
     space_sep2 >>
@@ -439,6 +441,7 @@ named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // except_clause: 'except' [test ['as' NAME]]
 named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
+    count!(char!(' '), indent) >>
     tag!("try") >>
     ws2!(char!(':')) >>
     try_block: call!(block, indent) >>
@@ -492,6 +495,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // with_item: test ['as' expr]
 named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
+    count!(char!(' '), indent) >>
     tag!("with") >>
     space_sep2 >>
     contexts: separated_nonempty_list!(ws2!(char!(',')), do_parse!(
@@ -526,8 +530,10 @@ mod tests {
     #[test]
     fn test_statement_indent() {
         assert_parse_eq(statement(make_strspan("del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(statement(make_strspan(" del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
         assert!(statement(make_strspan(" del foo"), 0).is_err());
-        assert!(statement(make_strspan(" del foo"), 1).is_err());
+        assert!(statement(make_strspan("  del foo"), 1).is_err());
+        assert!(statement(make_strspan("del foo"), 1).is_err());
     }
 
     #[test]

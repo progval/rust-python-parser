@@ -126,10 +126,12 @@ named!(pub name<StrSpan, String>,
 
 named!(pub newline<StrSpan, ()>,
   map!(
-    tuple!(
-      space,
-      opt!(preceded!(char!('#'), many0!(none_of!("\n")))),
-      char!('\n')
+    many1!(
+      tuple!(
+        space,
+        opt!(preceded!(char!('#'), many0!(none_of!("\n")))),
+        char!('\n')
+      )
     ),
     |_| ()
   )
