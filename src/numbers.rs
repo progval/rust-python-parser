@@ -1,6 +1,8 @@
 use std::str::FromStr;
 
+#[cfg(feature="bigint")]
 use num_traits::Num;
+#[cfg(feature="bigint")]
 use num_traits::Zero;
 
 use helpers::StrSpan;
@@ -30,7 +32,7 @@ named!(integer<StrSpan, IntegerType>,
   | preceded!(alt!(tag!("0x")|tag!("0X")), recognize!(many1!(one_of!("_0123456789abcdefABCDEF")))) => { |s:StrSpan|
       IntegerType::from_str_radix(&str::replace(&s.fragment.0, "_", ""), 16).unwrap()
     }
-  | many1!(one_of!("_0")) => { |_| IntegerType::zero() }
+  | many1!(one_of!("_0")) => { |_| Default::default() } // Either 0u64 or BigUint::zero()
   )
 );
 

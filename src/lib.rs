@@ -10,7 +10,10 @@ extern crate pretty_assertions;
 
 extern crate unicode_xid;
 //extern crate unicode_names;
+
+#[cfg(feature="bigint")]
 extern crate num_traits;
+#[cfg(feature="bigint")]
 extern crate num_bigint;
 
 #[macro_use]
