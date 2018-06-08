@@ -291,12 +291,16 @@ named!(testlist_comp<StrSpan, Expression>,
       ) >>
     r: alt!(
       call!(Self::comp_for) => { |comp| Expression::ListComp(Box::new(first), comp) }
-    | preceded!(ws3!(char!(',')), separated_list!(ws3!(char!(',')),
-        alt!(
-          call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
-        | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
-        )
-      )) => { |v: Vec<SetItem>| {
+    | delimited!(
+        ws3!(char!(',')),
+        separated_list!(ws3!(char!(',')),
+          alt!(
+            call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
+          | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
+          )
+        ),
+        ws3!(opt!(char!(',')))
+      ) => { |v: Vec<SetItem>| {
         let mut v = v;
         v.insert(0, first);
         Expression::ListLiteral(v)
