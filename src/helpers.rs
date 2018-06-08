@@ -159,3 +159,10 @@ pub(crate) fn assert_parse_eq<T: Debug + PartialEq>(
         (l, r) => assert_eq!(l, r),
     }
 }
+
+pub(crate) fn first_word(i: StrSpan) -> Result<(StrSpan, &str), ::nom::Err<StrSpan>> {
+    match ::nom::alpha(i) {
+        Ok((i, s)) => Ok((i, s.fragment.0)),
+        Err(e) => Err(e),
+    }
+}

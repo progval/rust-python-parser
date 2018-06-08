@@ -350,17 +350,19 @@ named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)
 
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
-  switch!(map!(peek!(call!(::nom::alpha)), |s| s.fragment.0),
+  switch!(peek!(first_word),
     "if" => call!(if_stmt, indent)
   | "for" => call!(for_stmt, indent)
   | "while" => call!(while_stmt, indent)
   | "try" => call!(try_stmt, indent)
   | "with" => call!(with_stmt, indent)
   | "def" => call!(decorated, indent)
+  | "class" => call!(decorated, indent)
   | "async" => alt!(
       call!(decorated, indent) // ASYNC funcdef
     | call!(for_stmt, indent)
     )
+  | _ => call!(decorated, indent)
   )
 );
 

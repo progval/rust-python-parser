@@ -4,9 +4,7 @@ use nom::IResult;
 
 use statements::{ImportParser, block};
 use expressions::ExpressionParser;
-use helpers::StrSpan;
-use helpers::{name, newline, space_sep2};
-use helpers::{NewlinesAreSpaces, NewlinesAreNotSpaces};
+use helpers::*;
 use ast::*;
 
 /*********************************************************************
@@ -36,9 +34,10 @@ named_args!(decorators(indent: usize) <StrSpan, Vec<Decorator>>,
 named_args!(pub decorated(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     decorators: call!(decorators, indent) >>
-    s: alt!(
-        call!(funcdef, indent, decorators.clone()) // FIXME: do not clone
-      | call!(classdef, indent, decorators)
+    s: switch!(peek!(ws2!(first_word)),
+        "def" => call!(funcdef, indent, decorators.clone()) // FIXME: do not clone
+      | "async" => call!(funcdef, indent, decorators.clone()) // FIXME: do not clone
+      | "class" => call!(classdef, indent, decorators)
     ) >> (s)
   )
 );
