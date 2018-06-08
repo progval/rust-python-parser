@@ -20,6 +20,13 @@ enum RawArgument {
     Kwargs(Expression),
 }
 
+#[derive(Clone, Debug, PartialEq)]
+enum TestlistCompReturn {
+    Comp(Box<SetItem>, Vec<ComprehensionChunk>), // comprehension
+    Lit(Vec<SetItem>), // list of litterals (length >= 1)
+    Single(SetItem), // a single litteral: either from `[foo]` (list) or `(foo)` (atom, NOT tuple)
+}
+
 pub(crate) struct ExpressionParser<ANS: AreNewlinesSpaces> {
     _phantom: PhantomData<ANS>,
 }
@@ -117,18 +124,18 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 
 // or_test: and_test ('or' and_test)*
 bop!(or_test, Self::and_test, alt!(
-  tag!("or ") => { |_| Bop::Or }
+  tuple!(tag!("or"), space_sep!()) => { |_| Bop::Or }
 ));
 
 // and_test: not_test ('and' not_test)*
 bop!(and_test, Self::not_test, alt!(
-  tag!("and ") => { |_| Bop::And }
+  tuple!(tag!("and"), space_sep!()) => { |_| Bop::And }
 ));
 
 // not_test: 'not' not_test | comparison
 named!(not_test<StrSpan, Box<Expression>>,
   alt!(
-    preceded!(tag!("not "), call!(Self::comparison)) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
+    preceded!(tuple!(tag!("not"), space_sep!()), call!(Self::comparison)) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
   | call!(Self::comparison)
   )
 );
@@ -245,7 +252,7 @@ named!(atom_expr<StrSpan, Box<Expression>>,
 //       '{' [dictorsetmaker] '}' |
 //       NAME | NUMBER | STRING+ | '...' | 'None' | 'True' | 'False')
 named!(atom<StrSpan, Box<Expression>>,
-  map!(alt!(
+  map!(dbg_dmp!(alt!(
     tag!("...") => { |_| Expression::Ellipsis }
   | tag!("None") => { |_| Expression::None }
   | tag!("True") => { |_| Expression::True }
@@ -264,34 +271,45 @@ named!(atom<StrSpan, Box<Expression>>,
   | ws3!(delimited!(char!('{'), ws4!(map!(
       call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker), |e:Box<_>| *e
     )), char!('}')))
-  | ws3!(delimited!(char!('('), ws4!(
+  | map_opt!(ws3!(delimited!(char!('('), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
-    ), char!(')'))) => { |e|
-      match e {
-          Expression::ListComp(e, comp) => Expression::Generator(e, comp),
-          Expression::ListLiteral(v) => Expression::TupleLiteral(v),
-          _ => unreachable!(),
+    ), char!(')'))),  |ret| {
+      match ret {
+          // Case 1: (foo for ...) or (*foo for ...)
+          TestlistCompReturn::Comp(e, comp) => Some(Expression::Generator(e, comp)),
+          // Case 2: (foo,) or (foo, bar ...)
+          TestlistCompReturn::Lit(v) => Some(Expression::TupleLiteral(v)),
+          // Case 3: (foo)
+          TestlistCompReturn::Single(SetItem::Unique(e)) => Some(e),
+          // Forbidden case: (*foo)
+          TestlistCompReturn::Single(SetItem::Star(_)) => None,
       }
-    }
+    })
   | ws3!(delimited!(char!('('), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::yield_expr)
     ), char!(')')))
   | ws3!(delimited!(char!('['), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
-    ), char!(']')))
-  ), |e| Box::new(e))
+    ), char!(']'))) => { |ret| {
+      match ret {
+          TestlistCompReturn::Comp(e, comp) => Expression::ListComp(e, comp),
+          TestlistCompReturn::Lit(v) => Expression::ListLiteral(v),
+          TestlistCompReturn::Single(e) => Expression::ListLiteral(vec![e]),
+      }}
+    }
+  )), |e| Box::new(e))
 );
 
 // testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
-named!(testlist_comp<StrSpan, Expression>,
+named!(testlist_comp<StrSpan, TestlistCompReturn>,
   do_parse!(
     first: alt!(
         call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
       | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
       ) >>
     r: alt!(
-      call!(Self::comp_for) => { |comp| Expression::ListComp(Box::new(first), comp) }
-    | delimited!(
+      call!(Self::comp_for) => { |comp| TestlistCompReturn::Comp(Box::new(first), comp) }
+    | opt!(delimited!(
         ws3!(char!(',')),
         separated_list!(ws3!(char!(',')),
           alt!(
@@ -300,10 +318,15 @@ named!(testlist_comp<StrSpan, Expression>,
           )
         ),
         ws3!(opt!(char!(',')))
-      ) => { |v: Vec<SetItem>| {
-        let mut v = v;
-        v.insert(0, first);
-        Expression::ListLiteral(v)
+      )) => { |v: Option<Vec<SetItem>>| {
+        match v {
+            Some(v) => {
+                let mut v = v;
+                v.insert(0, first);
+                TestlistCompReturn::Lit(v)
+            },
+            None => TestlistCompReturn::Single(first),
+        }
       }}
     ) >> (
       r
@@ -797,6 +820,46 @@ mod tests {
     }
 
     #[test]
+    fn test_bool() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+        assert_parse_eq(test(make_strspan("foo and bar")), Ok((make_strspan(""),
+            Box::new(Expression::Bop(Bop::And,
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Name("bar".to_string())),
+            ))
+        )));
+
+        assert_parse_eq(test(make_strspan("foo and + bar")), Ok((make_strspan(""),
+            Box::new(Expression::Bop(Bop::And,
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Uop(Uop::Plus,
+                    Box::new(Expression::Name("bar".to_string())),
+                )),
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_parentheses1() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+        assert_parse_eq(test(make_strspan("(foo)")), Ok((make_strspan(""),
+            Box::new(Expression::Name("foo".to_string())),
+        )));
+    }
+
+    #[test]
+    fn test_parentheses2() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+        assert_parse_eq(test(make_strspan("(foo and bar)")), Ok((make_strspan(""),
+            Box::new(Expression::Bop(Bop::And,
+                Box::new(Expression::Name("foo".to_string())),
+                Box::new(Expression::Name("bar".to_string())),
+            ))
+        )));
+    }
+
+
+    #[test]
     fn test_call_noarg() {
         let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
         assert_parse_eq(atom_expr(make_strspan("foo()")), Ok((make_strspan(""),
@@ -804,6 +867,50 @@ mod tests {
                 Box::new(Expression::Name("foo".to_string())),
                 Arglist {
                     positional_args: vec![
+                    ],
+                    keyword_args: vec![
+                    ],
+                },
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_call_positional_expr1() {
+        let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
+        assert_parse_eq(atom_expr(make_strspan("foo(bar and baz)")), Ok((make_strspan(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Name("foo".to_string())),
+                Arglist {
+                    positional_args: vec![
+                        Argument::Normal(
+                            Expression::Bop(Bop::And,
+                                Box::new(Expression::Name("bar".to_string())),
+                                Box::new(Expression::Name("baz".to_string())),
+                            )
+                        ),
+                    ],
+                    keyword_args: vec![
+                    ],
+                },
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_call_positional_expr2() {
+        let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
+        assert_parse_eq(atom_expr(make_strspan("foo(bar*baz)")), Ok((make_strspan(""),
+            Box::new(Expression::Call(
+                Box::new(Expression::Name("foo".to_string())),
+                Arglist {
+                    positional_args: vec![
+                        Argument::Normal(
+                            Expression::Bop(Bop::Mult,
+                                Box::new(Expression::Name("bar".to_string())),
+                                Box::new(Expression::Name("baz".to_string())),
+                            )
+                        ),
                     ],
                     keyword_args: vec![
                     ],
@@ -1441,7 +1548,7 @@ mod tests {
         let testlist_comp = ExpressionParser::<NewlinesAreNotSpaces>::testlist_comp;
 
         assert_parse_eq(testlist_comp(make_strspan("foo for bar in baz")), Ok((make_strspan(""),
-            Expression::ListComp(
+            TestlistCompReturn::Comp(
                 Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
                 vec![
                     ComprehensionChunk::For {
@@ -1461,7 +1568,7 @@ mod tests {
         let testlist_comp = ExpressionParser::<NewlinesAreNotSpaces>::testlist_comp;
 
         assert_parse_eq(testlist_comp(make_strspan("foo for bar in baz for qux in quux")), Ok((make_strspan(""),
-            Expression::ListComp(
+            TestlistCompReturn::Comp(
                 Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
                 vec![
                     ComprehensionChunk::For {
@@ -1488,7 +1595,7 @@ mod tests {
         let testlist_comp = ExpressionParser::<NewlinesAreNotSpaces>::testlist_comp;
 
         assert_parse_eq(testlist_comp(make_strspan("foo for bar in baz if qux")), Ok((make_strspan(""),
-            Expression::ListComp(
+            TestlistCompReturn::Comp(
                 Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
                 vec![
                     ComprehensionChunk::For {

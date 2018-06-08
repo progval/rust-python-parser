@@ -553,6 +553,63 @@ mod tests {
     }
 
     #[test]
+    fn test_assert1() {
+        assert_parse_eq(block(make_strspan("assert foo"), 0), Ok((make_strspan(""),
+            vec![
+                Statement::Assert(
+                    Expression::Name("foo".to_string()),
+                    None
+                ),
+            ]
+        )));
+    }
+
+    #[test]
+    fn test_assert2() {
+        assert_parse_eq(block(make_strspan("assert foo and bar"), 0), Ok((make_strspan(""),
+            vec![
+                Statement::Assert(
+                    Expression::Bop(Bop::And,
+                        Box::new(Expression::Name("foo".to_string())),
+                        Box::new(Expression::Name("bar".to_string())),
+                    ),
+                    None
+                ),
+            ]
+        )));
+    }
+
+    #[test]
+    fn test_assert3() {
+        assert_parse_eq(block(make_strspan("assert (foo and bar)"), 0), Ok((make_strspan(""),
+            vec![
+                Statement::Assert(
+                    Expression::Bop(Bop::And,
+                        Box::new(Expression::Name("foo".to_string())),
+                        Box::new(Expression::Name("bar".to_string())),
+                    ),
+                    None
+                ),
+            ]
+        )));
+    }
+
+    #[test]
+    fn test_assert4() {
+        assert_parse_eq(block(make_strspan("assert (foo and\n bar)"), 0), Ok((make_strspan(""),
+            vec![
+                Statement::Assert(
+                    Expression::Bop(Bop::And,
+                        Box::new(Expression::Name("foo".to_string())),
+                        Box::new(Expression::Name("bar".to_string())),
+                    ),
+                    None
+                ),
+            ]
+        )));
+    }
+
+    #[test]
     fn test_if() {
         assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar"), 0), Ok((make_strspan(""),
             CompoundStatement::If(

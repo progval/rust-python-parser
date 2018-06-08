@@ -61,7 +61,7 @@ named!(pub spaces2<StrSpan, ()>,
 );
 
 named!(pub space_sep<StrSpan, ()>,
-  map!(many1!(one_of!(" \t\n")), |_| ())
+  map!(many1!(alt!(map!(one_of!(" \t"), |_|()) | newline)), |_| ())
 );
 
 named!(pub space_sep2<StrSpan, ()>,
