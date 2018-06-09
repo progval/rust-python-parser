@@ -143,11 +143,11 @@ named!(not_test<StrSpan, Box<Expression>>,
 // comparison: expr (comp_op expr)*
 // comp_op: '<'|'>'|'=='|'>='|'<='|'<>'|'!='|'in'|'not' 'in'|'is'|'is' 'not'
 bop!(comparison, Self::expr, alt!(
-  char!('<') => { |_| Bop::Lt }
-| char!('>') => { |_| Bop::Gt }
-| tag!("==") => { |_| Bop::Eq }
+  tag!("==") => { |_| Bop::Eq }
 | tag!("<=") => { |_| Bop::Leq }
 | tag!(">=") => { |_| Bop::Geq }
+| char!('<') => { |_| Bop::Lt }
+| char!('>') => { |_| Bop::Gt }
 | tag!("!=") => { |_| Bop::Neq }
 | tag!("in") => { |_| Bop::In }
 | tuple!(tag!("not"), space_sep!(), tag!("in"), space_sep!()) => { |_| Bop::NotIn }
@@ -252,7 +252,7 @@ named!(atom_expr<StrSpan, Box<Expression>>,
 //       '{' [dictorsetmaker] '}' |
 //       NAME | NUMBER | STRING+ | '...' | 'None' | 'True' | 'False')
 named!(atom<StrSpan, Box<Expression>>,
-  map!(dbg_dmp!(alt!(
+  map!(alt!(
     tag!("...") => { |_| Expression::Ellipsis }
   | tag!("None") => { |_| Expression::None }
   | tag!("True") => { |_| Expression::True }
@@ -297,7 +297,7 @@ named!(atom<StrSpan, Box<Expression>>,
           TestlistCompReturn::Single(e) => Expression::ListLiteral(vec![e]),
       }}
     }
-  )), |e| Box::new(e))
+  ), |e| Box::new(e))
 );
 
 // testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
@@ -1633,4 +1633,15 @@ mod tests {
         ))));
     }
 
+
+    #[test]
+    fn test_op() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+        assert_parse_eq(test(make_strspan("n >= 0")), Ok((make_strspan(""),
+            Box::new(Expression::Bop(Bop::Geq,
+                Box::new(Expression::Name("n".to_string())),
+                Box::new(Expression::Int(0u32.into()))
+            ))
+        )));
+    }
 }
