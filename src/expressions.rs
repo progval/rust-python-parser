@@ -642,6 +642,10 @@ mod tests {
         assert_parse_eq(atom(make_strspan(r#"r'fo \' o' "#)), Ok((make_strspan(" "),
             Box::new(Expression::String(vec![PyString { prefix: "r".to_string(), content: "fo \\' o".to_string() }])))
         ));
+
+        assert_parse_eq(atom(make_strspan(r#"'\x8a'"#)), Ok((make_strspan(""),
+            Box::new(Expression::String(vec![new_pystring("\u{8a}")])))
+        ));
     }
 
     #[test]

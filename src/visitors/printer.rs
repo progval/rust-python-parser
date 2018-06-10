@@ -499,14 +499,25 @@ fn format_expr(e: &Expression) -> String {
                     '\t' => "\\t".to_string(),
                     '\\' => "\\\\".to_string(),
                     '"' => "\\\"".to_string(),
-                    c if c.is_ascii() => c.to_string(),
-                    c if (c as u32) <= 0xffff => format!("\\u{:04}", c as u32),
-                    c => format!("\\U{:08}", c as u32),
+                    '\x20'...'\x7e' => c.to_string(),
+                    '\x00'...'\x1f' | '\x7f' | '\u{80}'...'\u{ff}' => format!("\\x{:02x}", c as u8),
+                    '\u{100}'...'\u{ffff}' => format!("\\u{:04x}", c as u16),
+                    '\u{10000}'...'\u{10ffff}' => format!("\\U{:08x}", c as u32),
+                    _ => unreachable!(),
                 }).collect::<Vec<_>>()[..].concat())
             ))
         },
-        Expression::Bytes(ref b) => {
-            format!("bytes({:?})", b) // FIXME: that's cheating
+        Expression::Bytes(ref content) => {
+            format!("b\"{}\"", content.iter().map(|b| match b {
+                b'\r' => "\\r".to_string(),
+                b'\n' => "\\n".to_string(),
+                b'\t' => "\\t".to_string(),
+                b'\\' => "\\\\".to_string(),
+                b'"' => "\\\"".to_string(),
+                0x20...0x7e => (*b as char).to_string(),
+                0x00...0x1f | 0x7f | 0x80...0xff => format!("\\x{:02x}", b),
+                _ => unreachable!(), // waiting for https://github.com/rust-lang/rust/pull/50912
+            }).collect::<Vec<_>>()[..].concat())
         },
 
         Expression::DictLiteral(ref v) =>
