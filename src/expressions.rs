@@ -337,15 +337,15 @@ named!(testlist_comp<StrSpan, TestlistCompReturn>,
 
 // subscript: test | [test] ':' [test] [sliceop]
 named!(subscript<StrSpan, Subscript>,
-  alt!(
+  ws4!(alt!(
     preceded!(char!(':'), call!(Self::subscript_trail, None))
   | do_parse!(
       first: call!(Self::test) >>
-      r: opt!(preceded!(char!(':'), call!(Self::subscript_trail, Some(*first.clone())))) >> ( // FIXME: remove this clone
+      r: opt!(ws4!(preceded!(char!(':'), call!(Self::subscript_trail, Some(*first.clone()))))) >> ( // FIXME: remove this clone
         r.unwrap_or(Subscript::Simple(*first))
       )
     )
-  )
+  ))
 );
 named_args!(subscript_trail(first: Option<Expression>) <StrSpan, Subscript>,
   do_parse!(

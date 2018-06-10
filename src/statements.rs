@@ -68,24 +68,24 @@ named!(expr_stmt<StrSpan, Statement>,
         )
       )
 
-    | // Case 2: "foo", "foo = bar", "foo = bar = baz", ...
-      do_parse!(
-        rhs: many0!(ws2!(preceded!(char!('='), alt!(
-          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
-        | testlist_star_expr
-        )))) >> (
-          Statement::Assignment(lhs.clone(), rhs)
-        )
-      )
-
-    | // Case 3: "Foo += bar" (and other operators)
+    | // Case 2: "Foo += bar" (and other operators)
       do_parse!(
         op: augassign >>
         rhs: alt!(
           call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
         | call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist)
         ) >> (
-          Statement::AugmentedAssignment(lhs, op, rhs)
+          Statement::AugmentedAssignment(lhs.clone(), op, rhs)
+        )
+      )
+
+    | // Case 3: "foo", "foo = bar", "foo = bar = baz", ...
+      do_parse!(
+        rhs: many0!(ws2!(preceded!(char!('='), alt!(
+          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
+        | testlist_star_expr
+        )))) >> (
+          Statement::Assignment(lhs, rhs)
         )
       )
     )) >>
