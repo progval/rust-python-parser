@@ -493,7 +493,7 @@ fn format_expr(e: &Expression) -> String {
         Expression::ImaginaryFloat(ref n) => format!("{}j", format_float(*n)),
         Expression::String(ref v) => {
             space_join(v.iter().map(|PyString { prefix, content }|
-                format!("{}\"{}\"", prefix, content.chars().map(|c| match c {
+                format!("{}\"{}\"", prefix.to_ascii_lowercase().replace("r", ""), content.chars().map(|c| match c {
                     '\r' => "\\r".to_string(),
                     '\n' => "\\n".to_string(),
                     '\t' => "\\t".to_string(),
