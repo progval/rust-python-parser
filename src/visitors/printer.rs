@@ -49,9 +49,9 @@ fn format_statement(indent: usize, stmt: &Statement) -> String {
     push_indent(indent, &mut s);
     match *stmt {
         Statement::Pass => s.push_str("pass\n"),
-        Statement::Del(ref names) => {
+        Statement::Del(ref exprs) => {
             s.push_str("del ");
-            s.push_str(&comma_join(names));
+            s.push_str(&comma_join(exprs.iter().map(format_expr)));
             s.push_str("\n");
         },
         Statement::Break => s.push_str("break\n"),
@@ -447,7 +447,9 @@ fn format_expr(e: &Expression) -> String {
                 format!("{}{:?}", prefix, content) // FIXME: that's cheating
             ))
         },
-        Expression::Bytes(_) => unimplemented!(),
+        Expression::Bytes(ref b) => {
+            format!("bytes({:?})", b) // FIXME: that's cheating
+        },
 
         Expression::DictLiteral(ref v) =>
             format!("{{{}}}", comma_join(v.iter().map(format_dictitem))),

@@ -308,7 +308,7 @@ impl fmt::Display for AugAssignOp {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Pass,
-    Del(Vec<Name>),
+    Del(Vec<Expression>),
     Break,
     Continue,
     Return(Vec<Expression>),

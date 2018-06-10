@@ -40,7 +40,8 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 // test: or_test ['if' or_test 'else' test] | lambdef
 named!(pub test<StrSpan, Box<Expression>>,
   alt!(
-    do_parse!(
+    call!(Self::lambdef)
+  | do_parse!(
       left: call!(Self::or_test) >>
       right: opt!(do_parse!(
         space_sep!() >>
@@ -60,15 +61,14 @@ named!(pub test<StrSpan, Box<Expression>>,
         }
       )
     )
-  | call!(Self::lambdef)
   )
 );
 
 // test_nocond: or_test | lambdef_nocond
 named!(test_nocond<StrSpan, Box<Expression>>,
   alt!(
-    call!(Self::or_test)
-  | call!(Self::lambdef_nocond)
+    call!(Self::lambdef_nocond)
+  | call!(Self::or_test)
   )
 );
 
@@ -76,9 +76,10 @@ named!(test_nocond<StrSpan, Box<Expression>>,
 named!(lambdef<StrSpan, Box<Expression>>,
   do_parse!(
     tag!("lambda") >>
-    space_sep!() >>
-    args: opt!(varargslist) >>
+    args: opt!(preceded!(space_sep!(), varargslist)) >>
+    spaces!() >>
     char!(':') >>
+    spaces!() >>
     code: call!(Self::test) >> (
       Box::new(Expression::Lambdef(args.unwrap_or_default(), code))
     )
@@ -1641,6 +1642,32 @@ mod tests {
             Box::new(Expression::Bop(Bop::Geq,
                 Box::new(Expression::Name("n".to_string())),
                 Box::new(Expression::Int(0u32.into()))
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_lambda() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+
+        assert_parse_eq(test(make_strspan("lambda: foo")), Ok((make_strspan(""),
+            Box::new(Expression::Lambdef(
+                Default::default(),
+                Box::new(Expression::Name("foo".to_string())),
+            ))
+        )));
+
+        assert_parse_eq(test(make_strspan("lambda : foo")), Ok((make_strspan(""),
+            Box::new(Expression::Lambdef(
+                Default::default(),
+                Box::new(Expression::Name("foo".to_string())),
+            ))
+        )));
+
+        assert_parse_eq(test(make_strspan("lambda :foo")), Ok((make_strspan(""),
+            Box::new(Expression::Lambdef(
+                Default::default(),
+                Box::new(Expression::Name("foo".to_string())),
             ))
         )));
     }

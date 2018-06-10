@@ -72,9 +72,9 @@ mod tests {
     #[test]
     fn foo() {
         assert_parse_eq(newline(make_strspan("\n")), Ok((make_strspan(""), ())));
-        assert_parse_eq(parse_single_input(make_strspan("del foo")), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(parse_single_input(make_strspan("del foo bar")), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string(), "bar".to_string()])])));
-        assert_parse_eq(parse_single_input(make_strspan("del foo; del bar")), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["bar".to_string()])])));
-        assert_parse_eq(parse_single_input(make_strspan("del foo ;del bar")), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["bar".to_string()])])));
+        assert_parse_eq(parse_single_input(make_strspan("del foo")), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(parse_single_input(make_strspan("del foo, bar")), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string()), Expression::Name("bar".to_string())])])));
+        assert_parse_eq(parse_single_input(make_strspan("del foo; del bar")), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("bar".to_string())])])));
+        assert_parse_eq(parse_single_input(make_strspan("del foo ;del bar")), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("bar".to_string())])])));
     }
 }

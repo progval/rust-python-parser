@@ -36,7 +36,7 @@ named_args!(simple_stmt() <StrSpan, Vec<Statement>>,
 //             import_stmt | global_stmt | nonlocal_stmt | assert_stmt)
 named!(small_stmt<StrSpan, Statement>,
   alt!(
-    del_stmt => { |atoms| Statement::Del(atoms) }
+    del_stmt
   | pass_stmt
   | flow_stmt
   | import_stmt
@@ -132,8 +132,9 @@ named!(augassign<StrSpan, AugAssignOp>,
  *********************************************************************/
 
 // del_stmt: 'del' exprlist
-named!(del_stmt<StrSpan, Vec<String>>,
-  preceded!(tuple!(tag!("del"), space_sep2), ws2!(many1!(name)))
+named!(del_stmt<StrSpan, Statement>,
+  map!(preceded!(tuple!(tag!("del"), space_sep2), ExpressionParser::<NewlinesAreNotSpaces>::exprlist), |v:Vec<_>| Statement::Del(v))
+  // TODO: check it's one of the allowed form of del expression
 );
 
 // pass_stmt: 'pass'
@@ -529,8 +530,8 @@ mod tests {
 
     #[test]
     fn test_statement_indent() {
-        assert_parse_eq(statement(make_strspan("del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(statement(make_strspan(" del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(statement(make_strspan("del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(statement(make_strspan(" del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
         assert!(statement(make_strspan(" del foo"), 0).is_err());
         assert!(statement(make_strspan("  del foo"), 1).is_err());
         assert!(statement(make_strspan("del foo"), 1).is_err());
@@ -538,18 +539,36 @@ mod tests {
 
     #[test]
     fn test_block() {
-        assert_parse_eq(block(make_strspan("\n del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(block(make_strspan("\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(block(make_strspan("\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(block(make_strspan("\n del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(block(make_strspan("\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(block(make_strspan("\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
         assert!(block(make_strspan("\ndel foo"), 0).is_err());
         assert!(block(make_strspan("\ndel foo"), 1).is_err());
         assert!(block(make_strspan("\n del foo"), 1).is_err());
 
-        assert_parse_eq(block(make_strspan("\n del foo\n del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(block(make_strspan("\n  del foo\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(block(make_strspan("\n      del foo\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec!["foo".to_string()]), Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(block(make_strspan("\n del foo\ndel foo"), 0), Ok((make_strspan("\ndel foo"), vec![Statement::Del(vec!["foo".to_string()])])));
-        assert_parse_eq(block(make_strspan("\n del foo\n  del foo"), 0), Ok((make_strspan("\n  del foo"), vec![Statement::Del(vec!["foo".to_string()])])));
+        assert_parse_eq(block(make_strspan("\n del foo\n del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(block(make_strspan("\n  del foo\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(block(make_strspan("\n      del foo\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(block(make_strspan("\n del foo\ndel foo"), 0), Ok((make_strspan("\ndel foo"), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(block(make_strspan("\n del foo\n  del foo"), 0), Ok((make_strspan("\n  del foo"), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+    }
+
+    #[test]
+    fn test_del() {
+        assert_parse_eq(statement(make_strspan("del foo"), 0), Ok((make_strspan(""),
+            vec![
+                Statement::Del(vec![Expression::Name("foo".to_string())]),
+            ]
+        )));
+
+        assert_parse_eq(statement(make_strspan("del foo, bar"), 0), Ok((make_strspan(""),
+            vec![
+                Statement::Del(vec![
+                    Expression::Name("foo".to_string()),
+                    Expression::Name("bar".to_string())
+                ]),
+            ]
+        )));
     }
 
     #[test]
@@ -617,7 +636,7 @@ mod tests {
                     (
                         Expression::Name("foo".to_string()),
                         vec![
-                            Statement::Del(vec!["bar".to_string()])
+                            Statement::Del(vec![Expression::Name("bar".to_string())])
                         ]
                     ),
                 ],
@@ -634,13 +653,13 @@ mod tests {
                     (
                         Expression::Name("foo".to_string()),
                         vec![
-                            Statement::Del(vec!["bar".to_string()])
+                            Statement::Del(vec![Expression::Name("bar".to_string())])
                         ]
                     ),
                     (
                         Expression::Name("foo".to_string()),
                         vec![
-                            Statement::Del(vec!["baz".to_string()])
+                            Statement::Del(vec![Expression::Name("baz".to_string())])
                         ]
                     ),
                 ],
@@ -657,13 +676,13 @@ mod tests {
                     (
                         Expression::Name("foo".to_string()),
                         vec![
-                            Statement::Del(vec!["bar".to_string()])
+                            Statement::Del(vec![Expression::Name("bar".to_string())])
                         ]
                     ),
                 ],
                 Some(
                     vec![
-                        Statement::Del(vec!["qux".to_string()])
+                        Statement::Del(vec![Expression::Name("qux".to_string())])
                     ]
                 )
             )
@@ -678,19 +697,19 @@ mod tests {
                     (
                         Expression::Name("foo".to_string()),
                         vec![
-                            Statement::Del(vec!["bar".to_string()])
+                            Statement::Del(vec![Expression::Name("bar".to_string())])
                         ]
                     ),
                     (
                         Expression::Name("foo".to_string()),
                         vec![
-                            Statement::Del(vec!["baz".to_string()])
+                            Statement::Del(vec![Expression::Name("baz".to_string())])
                         ]
                     ),
                 ],
                 Some(
                     vec![
-                        Statement::Del(vec!["qux".to_string()])
+                        Statement::Del(vec![Expression::Name("qux".to_string())])
                     ]
                 )
             )
@@ -711,7 +730,7 @@ mod tests {
                                       (
                                           Expression::Name("foo".to_string()),
                                           vec![
-                                              Statement::Del(vec!["bar".to_string()])
+                                              Statement::Del(vec![Expression::Name("bar".to_string())])
                                           ]
                                       ),
                                   ],
@@ -740,7 +759,7 @@ mod tests {
                                       (
                                           Expression::Name("foo".to_string()),
                                           vec![
-                                              Statement::Del(vec!["bar".to_string()])
+                                              Statement::Del(vec![Expression::Name("bar".to_string())])
                                           ]
                                       ),
                                   ],
@@ -752,7 +771,7 @@ mod tests {
                 ],
                 Some(
                     vec![
-                        Statement::Del(vec!["qux".to_string()])
+                        Statement::Del(vec![Expression::Name("qux".to_string())])
                     ]
                 )
             )
@@ -773,13 +792,13 @@ mod tests {
                                       (
                                           Expression::Name("foo".to_string()),
                                           vec![
-                                              Statement::Del(vec!["bar".to_string()])
+                                              Statement::Del(vec![Expression::Name("bar".to_string())])
                                           ]
                                       ),
                                   ],
                                   Some(
                                       vec![
-                                          Statement::Del(vec!["qux".to_string()])
+                                          Statement::Del(vec![Expression::Name("qux".to_string())])
                                       ]
                                   )
                                 )
@@ -798,7 +817,7 @@ mod tests {
             CompoundStatement::While(
                 Expression::Name("foo".to_string()),
                 vec![
-                    Statement::Del(vec!["bar".to_string()])
+                    Statement::Del(vec![Expression::Name("bar".to_string())])
                 ],
                 None
             )
@@ -811,11 +830,11 @@ mod tests {
             CompoundStatement::While(
                 Expression::Name("foo".to_string()),
                 vec![
-                    Statement::Del(vec!["bar".to_string()])
+                    Statement::Del(vec![Expression::Name("bar".to_string())])
                 ],
                 Some(
                     vec![
-                        Statement::Del(vec!["qux".to_string()])
+                        Statement::Del(vec![Expression::Name("qux".to_string())])
                     ]
                 )
             )
@@ -830,7 +849,7 @@ mod tests {
                 item: vec![Expression::Name("foo".to_string())],
                 iterator: vec![Expression::Name("bar".to_string())],
                 for_block: vec![
-                    Statement::Del(vec!["baz".to_string()])
+                    Statement::Del(vec![Expression::Name("baz".to_string())])
                 ],
                 else_block: None
             }
@@ -845,11 +864,11 @@ mod tests {
                 item: vec![Expression::Name("foo".to_string())],
                 iterator: vec![Expression::Name("bar".to_string())],
                 for_block: vec![
-                    Statement::Del(vec!["baz".to_string()])
+                    Statement::Del(vec![Expression::Name("baz".to_string())])
                 ],
                 else_block: Some(
                     vec![
-                        Statement::Del(vec!["qux".to_string()])
+                        Statement::Del(vec![Expression::Name("qux".to_string())])
                     ]
                 )
             }
@@ -965,7 +984,7 @@ mod tests {
                     (Expression::Name("foo".to_string()), None),
                 ],
                 vec![
-                    Statement::Del(vec!["bar".to_string()])
+                    Statement::Del(vec![Expression::Name("bar".to_string())])
                 ],
             )
         )));
@@ -976,7 +995,7 @@ mod tests {
                     (Expression::Name("foo".to_string()), Some(Expression::Name("bar".to_string()))),
                 ],
                 vec![
-                    Statement::Del(vec!["baz".to_string()])
+                    Statement::Del(vec![Expression::Name("baz".to_string())])
                 ],
             )
         )));
@@ -987,13 +1006,13 @@ mod tests {
         assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nexcept Bar:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
-                    Statement::Del(vec!["foo".to_string()]),
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
                 ],
                 except_clauses: vec![
                     (
                         Expression::Name("Bar".to_string()),
                         None,
-                        vec![Statement::Del(vec!["baz".to_string()])],
+                        vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
                     ),
                 ],
                 last_except: vec![],
@@ -1005,11 +1024,11 @@ mod tests {
         assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nexcept:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
-                    Statement::Del(vec!["foo".to_string()]),
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
                 ],
                 except_clauses: vec![],
                 last_except: vec![
-                    Statement::Del(vec!["baz".to_string()]),
+                    Statement::Del(vec![Expression::Name("baz".to_string())]),
                 ],
                 else_block: vec![],
                 finally_block: vec![],
@@ -1019,12 +1038,12 @@ mod tests {
         assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nelse:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
-                    Statement::Del(vec!["foo".to_string()]),
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
                 ],
                 except_clauses: vec![],
                 last_except: vec![],
                 else_block: vec![
-                    Statement::Del(vec!["baz".to_string()]),
+                    Statement::Del(vec![Expression::Name("baz".to_string())]),
                 ],
                 finally_block: vec![],
             })
@@ -1033,13 +1052,13 @@ mod tests {
         assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nfinally:\n del baz"), 0), Ok((make_strspan(""),
             CompoundStatement::Try(Try {
                 try_block: vec![
-                    Statement::Del(vec!["foo".to_string()]),
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
                 ],
                 except_clauses: vec![],
                 last_except: vec![],
                 else_block: vec![],
                 finally_block: vec![
-                    Statement::Del(vec!["baz".to_string()]),
+                    Statement::Del(vec![Expression::Name("baz".to_string())]),
                 ],
             })
         )));
