@@ -353,44 +353,30 @@ fn format_args(args: &Arglist) -> String {
 
 fn format_typed_params(param: &TypedArgsList) -> String {
     let TypedArgsList { ref positional_args, ref star_args, ref keyword_args, ref star_kwargs } = *param;
-    let mut s = String::new();
+    let mut chunks = Vec::new();
 
-    s.push_str(&comma_join(positional_args.iter().map(format_typed_param)));
-    if positional_args.len() > 0 {
-        s.push_str(", ");
-    }
+    chunks.extend(positional_args.iter().map(format_typed_param));
 
     match star_args {
         StarParams::No => (),
-        StarParams::Anonymous => s.push_str("*, "),
-        StarParams::Named((ref name, None)) => {
-            s.push_str("*");
-            s.push_str(name);
-        },
-        StarParams::Named((ref name, Some(ref typed))) => {
-            s.push_str("*");
-            s.push_str(name);
-            s.push_str(":");
-            s.push_str(&format_expr(typed));
-        },
+        StarParams::Anonymous => chunks.push("*".to_string()),
+        StarParams::Named((ref name, None)) => chunks.push(format!("*{}", name)),
+        StarParams::Named((ref name, Some(ref typed))) =>
+            chunks.push(format!("*{}:{}", name, format_expr(typed))),
     }
 
-    s.push_str(&comma_join(keyword_args.iter().map(format_typed_param)));
-    if keyword_args.len() > 0 {
-        s.push_str(", ");
-    }
+    chunks.extend(keyword_args.iter().map(format_typed_param));
 
     if let Some((name, typed)) = star_kwargs {
-        s.push_str("**");
-        s.push_str(name);
         if let Some(typed) = typed {
-            s.push_str(":");
-            s.push_str(&format_expr(typed))
+            chunks.push(format!("**{}:{}", name, format_expr(typed)))
         }
-        s.push_str(", ");
+        else {
+            chunks.push(format!("**{}", name));
+        }
     }
 
-    s
+    comma_join(chunks)
 }
 
 fn format_typed_param(param: &(Name, Option<Expression>, Option<Expression>)) -> String {
