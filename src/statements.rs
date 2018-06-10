@@ -25,7 +25,7 @@ named_args!(pub statement(indent: usize) <StrSpan, Vec<Statement>>,
 // simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 named_args!(simple_stmt() <StrSpan, Vec<Statement>>,
   do_parse!(
-    stmts: separated_nonempty_list!(semicolon, call!(small_stmt)) >>
+    stmts: separated_nonempty_list!(ws2!(semicolon), call!(small_stmt)) >>
     opt!(semicolon) >> (
       stmts
     )
@@ -181,14 +181,14 @@ named!(raise_stmt<StrSpan, Statement>,
 // global_stmt: 'global' NAME (',' NAME)*
 named!(global_stmt<StrSpan, Statement>,
   map!(preceded!(tuple!(tag!("global"), space_sep2),
-    ws2!(separated_nonempty_list!(char!(','), name))
+    ws2!(separated_nonempty_list!(ws2!(char!(',')), name))
   ), |names| Statement::Global(names))
 );
 
 // nonlocal_stmt: 'nonlocal' NAME (',' NAME)*
 named!(nonlocal_stmt<StrSpan, Statement>,
   map!(preceded!(tuple!(tag!("nonlocal"), space_sep2),
-    ws2!(separated_nonempty_list!(char!(','), name))
+    ws2!(separated_nonempty_list!(ws2!(char!(',')), name))
   ), |names| Statement::Nonlocal(names))
 );
 
@@ -288,19 +288,19 @@ named!(dotted_as_name<StrSpan, (Vec<Name>, Option<Name>)>,
 // import_as_names: import_as_name (',' import_as_name)* [',']
 named!(import_as_names<StrSpan, Vec<(Name, Option<Name>)>>,
   terminated!(
-    separated_nonempty_list!(tuple!(spaces!(), char!(','), spaces!()), call!(Self::import_as_name)),
+    separated_nonempty_list!(ws2!(char!(',')), call!(Self::import_as_name)),
     opt!(tuple!(spaces!(), char!(','), spaces!()))
   )
 );
 
 // dotted_as_names: dotted_as_name (',' dotted_as_name)*
 named!(dotted_as_names<StrSpan, Vec<(Vec<Name>, Option<Name>)>>,
-  separated_nonempty_list!(tuple!(spaces!(), char!(','), spaces!()), call!(Self::dotted_as_name))
+  separated_nonempty_list!(ws2!(char!(',')), call!(Self::dotted_as_name))
 );
 
 // dotted_name: NAME ('.' NAME)*
 named!(pub dotted_name<StrSpan, Vec<Name>>,
-  separated_nonempty_list!(tuple!(spaces!(), char!('.'), spaces!()), name)
+  separated_nonempty_list!(ws2!(char!('.')), name)
 );
 
 } // end ImportParser

@@ -227,7 +227,7 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
            * Parse positional arguments:
            * tfpdef ['=' test] (',' tfpdef ['=' test])*
            */
-          positional_args: separated_nonempty_list!(char!(','), call!(IIT::fpdef_with_default)) >>
+          positional_args: separated_nonempty_list!(ws2!(char!(',')), call!(IIT::fpdef_with_default)) >>
           r: opt!(ws4!(preceded!(char!(','), opt!( // FIXME: ws! is needed here because it does not traverse opt!
 
             alt!(
@@ -246,7 +246,7 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
             | do_parse!(
                 char!('*') >>
                 star_args: opt!(call!(IIT::fpdef)) >>
-                keyword_args: opt!(preceded!(char!(','), separated_nonempty_list!(char!(','), call!(IIT::fpdef_with_default)))) >>
+                keyword_args: opt!(ws4!(preceded!(char!(','), separated_nonempty_list!(ws4!(char!(',')), call!(IIT::fpdef_with_default))))) >>
                 star_kwargs: opt!(ws4!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: ws! is needed here because it does not traverse opt!
                   IIT::make_list(positional_args.clone(), Some(star_args), keyword_args.unwrap_or(Vec::new()), star_kwargs.unwrap_or(None)) // FIXME: do not clone
                 )
