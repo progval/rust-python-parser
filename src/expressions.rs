@@ -387,15 +387,15 @@ impl ExpressionParser<NewlinesAreSpaces> {
 //                   ((test | star_expr)
 //                    (comp_for | (',' (test | star_expr))* [','])) )
 named!(dictorsetmaker<StrSpan, Box<Expression>>,
-  alt!(
+  ws4!(alt!(
     do_parse!(
-      ws4!(tag!("**")) >>
+      tag!("**") >>
       e: map!(call!(Self::expr), |e: Box<_>| DictItem::Star(*e)) >>
       r: call!(Self::dictmaker, e) >>
       (r)
     )
   | do_parse!(
-      ws4!(tag!("*")) >>
+      tag!("*") >>
       e: map!(call!(Self::expr), |e: Box<_>| SetItem::Star(*e)) >>
       r: call!(Self::setmaker, e) >>
       (r)
@@ -404,7 +404,7 @@ named!(dictorsetmaker<StrSpan, Box<Expression>>,
       key: call!(Self::test) >>
       r: alt!(
         do_parse!(
-          ws4!(char!(':')) >>
+          char!(':') >>
           item: map!(call!(Self::test), |value: Box<_>| DictItem::Unique(*key.clone(), *value)) >> // FIXME: do not clone
           r: call!(Self::dictmaker, item) >>
           (r)
@@ -413,13 +413,13 @@ named!(dictorsetmaker<StrSpan, Box<Expression>>,
       ) >>
       (r)
     )
-  )
+  ))
 );
 
 named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
   map!(
-    opt!(alt!(
-      preceded!(char!(','), separated_list!(char!(','), call!(Self::dictitem))) => { |v: Vec<_>| {
+    opt!(ws4!(alt!(
+      delimited!(char!(','), separated_list!(char!(','), call!(Self::dictitem)), opt!(ws4!(char!(',')))) => { |v: Vec<_>| {
         let mut v = v;
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::DictLiteral(v))
@@ -427,7 +427,7 @@ named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
     | preceded!(peek!(tuple!(tag!("for"), call!(helpers::space_sep))), call!(Self::comp_for)) => { |comp| {
         Box::new(Expression::DictComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
-    )),
+    ))),
     |rest| {
       match rest {
           Some(r) => r,
@@ -439,8 +439,8 @@ named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
 
 named_args!(setmaker(item1: SetItem) <StrSpan, Box<Expression>>,
   do_parse!(
-    rest:opt!(alt!(
-      preceded!(char!(','), separated_list!(char!(','), call!(Self::setitem))) => { |v: Vec<_>| {
+    rest:opt!(ws4!(alt!(
+      delimited!(char!(','), separated_list!(char!(','), call!(Self::setitem)), opt!(ws4!(char!(',')))) => { |v: Vec<_>| {
         let mut v = v;
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::SetLiteral(v))
@@ -448,7 +448,7 @@ named_args!(setmaker(item1: SetItem) <StrSpan, Box<Expression>>,
     | call!(Self::comp_for) => { |comp| {
         Box::new(Expression::SetComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
-    )) >> (
+    ))) >> (
       match rest {
           Some(r) => r,
           None => Box::new(Expression::SetLiteral(vec![item1])),
