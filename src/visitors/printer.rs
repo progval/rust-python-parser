@@ -514,8 +514,13 @@ fn format_expr(e: &Expression) -> String {
             format!("{{{}}}", comma_join(v.iter().map(format_setitem))),
         Expression::ListLiteral(ref v) =>
             format!("[{}]", comma_join(v.iter().map(format_setitem))),
-        Expression::TupleLiteral(ref v) =>
-            format!("({})", comma_join(v.iter().map(format_setitem))),
+        Expression::TupleLiteral(ref v) => {
+            match v.len() {
+                0 => "()".to_string(),
+                1 => format!("({},)", format_setitem(&v[0])),
+                _ => format!("({})", comma_join(v.iter().map(format_setitem))),
+            }
+        },
 
         Expression::DictComp(e, ref comp) =>
             format!("{{{} {}}}", format_dictitem(e), space_join(comp.iter().map(format_comp))),
@@ -612,13 +617,15 @@ fn format_import(imp: &Import) -> String {
         },
         Import::Import { ref names } => {
             s.push_str("import ");
-            for (name, as_name) in names {
-                s.push_str(&format_dotted_name(name));
+            s.push_str(&comma_join(names.iter().map(|(name, as_name)| {
+                let mut s2 = String::new();
+                s2.push_str(&format_dotted_name(name));
                 if let Some(as_name) = as_name {
-                    s.push_str(" as ");
-                    s.push_str(as_name);
+                    s2.push_str(" as ");
+                    s2.push_str(as_name);
                 }
-            }
+                s2
+            })));
         }
     }
     s
