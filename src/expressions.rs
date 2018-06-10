@@ -1698,4 +1698,16 @@ mod tests {
         )));
     }
 
+
+    #[test]
+    fn test_escaped_newline() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+
+        assert_parse_eq(test(make_strspan("a <= \\\nb")), Ok((make_strspan(""),
+            Box::new(Expression::Bop(Bop::Leq,
+                Box::new(Expression::Name("a".to_string())),
+                Box::new(Expression::Name("b".to_string())),
+            ))
+        )));
+    }
 }

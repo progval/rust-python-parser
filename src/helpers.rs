@@ -8,8 +8,6 @@ use nom_locate::LocatedSpan;
 pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
 
 
-named!(pub space<StrSpan, StrSpan>, eat_separator!(&b" \t"[..]));
-
 /// Like `ws!()`, but does not allow newlines.
 #[macro_export]
 macro_rules! ws2 (
@@ -18,10 +16,10 @@ macro_rules! ws2 (
       use nom::Convert;
       use nom::Err;
 
-      match sep!($i, $crate::helpers::space, $($args)*) {
+      match sep!($i, $crate::helpers::spaces2, $($args)*) {
         Err(e) => Err(e),
         Ok((i1,o))    => {
-          match $crate::helpers::space(i1) {
+          match $crate::helpers::spaces2(i1) {
             Err(e) => Err(Err::convert(e)),
             Ok((i2,_))    => Ok((i2, o))
           }
@@ -52,20 +50,24 @@ macro_rules! ws4 (
   )
 );
 
+named!(escaped_newline<StrSpan, ()>,
+  map!(terminated!(char!('\\'), char!('\n')), |_| ())
+);
+
 named!(pub spaces<StrSpan, ()>,
-  map!(many0!(alt!(map!(one_of!(" \t"), |_|()) | newline)), |_| ())
+  map!(many0!(alt!(one_of!(" \t") => { |_|() } | escaped_newline | newline)), |_| ())
 );
 
 named!(pub spaces2<StrSpan, ()>,
-  map!(many0!(one_of!(" \t")), |_| ())
+  map!(many0!(alt!(one_of!(" \t") => { |_| () }|escaped_newline)), |_| ())
 );
 
 named!(pub space_sep<StrSpan, ()>,
-  map!(many1!(alt!(map!(one_of!(" \t"), |_|()) | newline)), |_| ())
+  map!(many1!(alt!(one_of!(" \t") => { |_|() } | escaped_newline | newline)), |_| ())
 );
 
 named!(pub space_sep2<StrSpan, ()>,
-  map!(many1!(one_of!(" \t")), |_| ())
+  map!(many1!(alt!(one_of!(" \t") => { |_| () } | escaped_newline)), |_| ())
 );
 
 // Let me explain this ugliness.
@@ -128,7 +130,7 @@ named!(pub newline<StrSpan, ()>,
   map!(
     many1!(
       tuple!(
-        space,
+        spaces2,
         opt!(preceded!(char!('#'), many0!(none_of!("\n")))),
         char!('\n')
       )
