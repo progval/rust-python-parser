@@ -240,8 +240,12 @@ pub enum Expression {
     Attribute(Box<Expression>, Name),
     /// Unary operator
     Uop(Uop, Box<Expression>),
-    /// Binary operator
+    /// Binary operator. A simplified version of `MultiBop`, when the
+    /// expressivity of MultiBop is not needed.
     Bop(Bop, Box<Expression>, Box<Expression>),
+    /// Binary operator... but may be applied on more than one expr
+    /// (eg. `a <= b < c`)
+    MultiBop(Box<Expression>, Vec<(Bop, Expression)>),
     /// 1 if 2 else 3
     Ternary(Box<Expression>, Box<Expression>, Box<Expression>),
     Yield(Vec<Expression>),

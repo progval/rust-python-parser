@@ -111,11 +111,19 @@ macro_rules! bop {
                 delimited!(spaces!(), $tag!($($args)*), spaces!()),
                 $child
               ),
-              first,
-              |acc, (op, f)| Box::new(Expression::Bop(op, acc, f))
-            ) >> (
-            r
-            )
+              (first, Vec::new()),
+              |(first, mut acc):(_,Vec<_>), (op, f):(_,Box<_>)| { acc.push((op, *f)); (first, acc) }
+            ) >> ({
+              let (first, rest) = r;
+              match rest.len() {
+                  0 => first,
+                  1 => {
+                      let (op, ref rhs) = rest[0];
+                      Box::new(Expression::Bop(op, first, Box::new(rhs.clone())))
+                  }
+                  _ => Box::new(Expression::MultiBop(first, rest))
+              }
+            })
           )
         );
     }
@@ -1674,4 +1682,20 @@ mod tests {
             ))
         )));
     }
+
+    #[test]
+    fn test_multibop() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+
+        assert_parse_eq(test(make_strspan("a <= b < c")), Ok((make_strspan(""),
+            Box::new(Expression::MultiBop(
+                Box::new(Expression::Name("a".to_string())),
+                vec![
+                    (Bop::Leq, Expression::Name("b".to_string())),
+                    (Bop::Lt, Expression::Name("c".to_string())),
+                ]
+            ))
+        )));
+    }
+
 }

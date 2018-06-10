@@ -218,7 +218,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
             }
             if finally_block.len() > 0 {
                 push_indent(indent, &mut s);
-                s.push_str("finally_block:\n");
+                s.push_str("finally:\n");
                 s.push_str(&format_block(indent+4, finally_block));
             }
             s
@@ -364,9 +364,11 @@ fn format_typed_params(param: &TypedArgsList) -> String {
         StarParams::No => (),
         StarParams::Anonymous => s.push_str("*, "),
         StarParams::Named((ref name, None)) => {
+            s.push_str("*");
             s.push_str(name);
         },
         StarParams::Named((ref name, Some(ref typed))) => {
+            s.push_str("*");
             s.push_str(name);
             s.push_str(":");
             s.push_str(&format_expr(typed));
@@ -561,6 +563,20 @@ fn format_expr(e: &Expression) -> String {
             };
             format!("{}{}{}", f(e1), op, f(e2))
         },
+        Expression::MultiBop(ref first, ref rest) => {
+            let mut s = String::new();
+            s.push_str("(");
+            s.push_str(&format_expr(first));
+            s.push_str(")");
+            for (op, e) in rest {
+                s.push_str(" ");
+                s.push_str(&op.to_string());
+                s.push_str(" (");
+                s.push_str(&format_expr(e));
+                s.push_str(")");
+            }
+            s
+        },
         Expression::Ternary(e1, e2, e3) =>
             format!("({}) if ({}) else ({})", format_expr(e1), format_expr(e2), format_expr(e3)),
         Expression::Star(ref e) =>
@@ -598,13 +614,15 @@ fn format_import(imp: &Import) -> String {
             }
             s.push_str(&format_dotted_name(path));
             s.push_str(" import ");
-            for (name, as_name) in names {
-                s.push_str(name);
+            s.push_str(&comma_join(names.iter().map(|(name, as_name)| {
+                let mut s2 = String::new();
+                s2.push_str(name);
                 if let Some(as_name) = as_name {
-                    s.push_str(" as ");
-                    s.push_str(as_name);
+                    s2.push_str(" as ");
+                    s2.push_str(as_name);
                 }
-            }
+                s2
+            })));
         },
         Import::Import { ref names } => {
             s.push_str("import ");
