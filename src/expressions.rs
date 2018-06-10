@@ -44,13 +44,9 @@ named!(pub test<StrSpan, Box<Expression>>,
   | do_parse!(
       left: call!(Self::or_test) >>
       right: opt!(do_parse!(
-        spaces!() >>
-        tag!("if") >>
-        space_sep!() >>
+        ws3!(tag!("if")) >>
         cond: call!(Self::or_test) >>
-        space_sep!() >>
-        tag!("else") >>
-        space_sep!() >>
+        ws3!(tag!("else")) >>
         right: call!(Self::test) >> (
           (cond, right)
         )
@@ -239,11 +235,11 @@ named!(atom_expr<StrSpan, Box<Expression>>,
   do_parse!(
     lhs: call!(Self::atom) >>
     trailers: fold_many0!(
-      alt!(
+      ws3!(alt!(
         delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')) => { |args| Trailer::Call(args) }
       | delimited!(char!('['), ws4!(separated_list!(char!(','), call!(ExpressionParser::<NewlinesAreSpaces>::subscript))), char!(']')) => { |i| Trailer::Subscript(i) }
       | preceded!(ws3!(char!('.')), name) => { |name| Trailer::Attribute(name) }
-      ),
+      )),
       lhs,
       |acc, item| Box::new(match item {
         Trailer::Call(args) => Expression::Call(acc, args),
@@ -533,10 +529,10 @@ named!(pub arglist<StrSpan, Arglist>,
       | preceded!(char!('*'), call!(Self::test)) => { |args: Box<_>| RawArgument::Starargs(*args) }
       | do_parse!(
           test1: call!(Self::test) >>
-          next: opt!(alt!(
+          next: opt!(ws4!(alt!(
             preceded!(char!('='), call!(Self::test)) => { |test2: Box<_>| RawArgument::Keyword(*test1.clone(), *test2) } // FIXME: do not clone
           | call!(Self::comp_for) => { |v| RawArgument::Positional(Expression::Generator(Box::new(SetItem::Unique(*test1.clone())), v)) } // FIXME: do not clone
-          )) >> (
+          ))) >> (
             match next {
                 Some(e) => e,
                 None => RawArgument::Positional(*test1)
@@ -575,11 +571,11 @@ named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionC
   do_parse!(
     async: map!(opt!(terminated!(tag!("async"), space_sep!())), |o| o.is_some()) >>
     tag!("for") >>
-    space_sep!() >>
+    spaces!() >>
     item: call!(Self::exprlist) >>
-    space_sep!() >>
+    spaces!() >>
     tag!("in") >>
-    space_sep!() >>
+    spaces!() >>
     iterator: map!(call!(Self::or_test), |e| *e) >>
     spaces!() >>
     r: call!(Self::opt_comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::For { async, item, iterator }); acc }) >> (
@@ -592,8 +588,9 @@ named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionC
 named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChunk>>,
   do_parse!(
     tag!("if") >>
-    space_sep!() >>
+    spaces!() >>
     cond: map!(call!(Self::test_nocond), |e| *e) >>
+    spaces!() >>
     r: call!(Self::opt_comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::If { cond }); acc }) >> (
       r
     )
@@ -1619,6 +1616,29 @@ mod tests {
                     },
                     ComprehensionChunk::If {
                         cond: Expression::Name("qux".to_string()),
+                    },
+                ],
+            )
+        )));
+    }
+
+    #[test]
+    fn test_listcomp3() {
+        let testlist_comp = ExpressionParser::<NewlinesAreNotSpaces>::testlist_comp;
+
+        assert_parse_eq(testlist_comp(make_strspan("foo for (bar, baz) in qux")), Ok((make_strspan(""),
+            TestlistCompReturn::Comp(
+                Box::new(SetItem::Unique(Expression::Name("foo".to_string()))),
+                vec![
+                    ComprehensionChunk::For {
+                        async: false,
+                        item: vec![
+                            Expression::TupleLiteral(vec![
+                                SetItem::Unique(Expression::Name("bar".to_string())),
+                                SetItem::Unique(Expression::Name("baz".to_string())),
+                            ]),
+                        ],
+                        iterator: Expression::Name("qux".to_string()),
                     },
                 ],
             )

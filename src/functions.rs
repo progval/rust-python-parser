@@ -98,7 +98,7 @@ trait IsItTyped {
             Self::fpdef,
             opt!(
                 preceded!(
-                    char!('='),
+                    ws4!(char!('=')),
                     call!(ExpressionParser::<NewlinesAreSpaces>::test)
                 )
             )
@@ -213,7 +213,7 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
           tag!("*") >>
           star_args: opt!(call!(IIT::fpdef)) >>
           keyword_args: separated_list!(char!(','), call!(IIT::fpdef_with_default)) >>
-          star_kwargs: opt!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef))))) >> (
+          star_kwargs: opt!(ws4!(preceded!(char!(','), opt!(ws4!(preceded!(tag!("**"), call!(IIT::fpdef))))))) >> (
             IIT::make_list(Vec::new(), Some(star_args), keyword_args, star_kwargs.unwrap_or(None))
           )
         )
@@ -314,6 +314,15 @@ mod tests {
                 })
             }
         )));
+        assert_parse_eq(decorator(make_strspan("  @foo.bar(baz)\n"), 2), Ok((make_strspan(""),
+            Decorator {
+                name: vec!["foo".to_string(), "bar".to_string()],
+                args: Some(Arglist {
+                    positional_args: vec![Argument::Normal(Expression::Name("baz".to_string()))],
+                    keyword_args: Vec::new(),
+                })
+            }
+        )));
     }
 
     #[test]
@@ -341,6 +350,25 @@ mod tests {
         )));
 
         assert!(decorated(make_strspan(" def foo():\n bar"), 1).is_err());
+    }
+
+    #[test]
+    fn test_decorated_func() {
+        assert_parse_eq(decorated(make_strspan(" @foo\n def foo():\n  bar"), 1), Ok((make_strspan(""),
+            CompoundStatement::Funcdef(Funcdef {
+                async: false,
+                decorators: vec![
+                    Decorator {
+                        name: vec!["foo".to_string()],
+                        args: None
+                    },
+                ],
+                name: "foo".to_string(),
+                parameters: TypedArgsList::default(),
+                return_type: None,
+                code: vec![Statement::Assignment(vec![Expression::Name("bar".to_string())], vec![])],
+            })
+        )));
     }
 
     #[test]

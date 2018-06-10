@@ -39,7 +39,7 @@ named_args!(shortbytes(quote: char) <StrSpan, Vec<u8>>,
   fold_many0!(
     alt!(
       call!(escapedchar)
-    | verify!(none_of!("\\"), |c:char| c != quote) => { |c:char| Some(c as u8) }
+    | verify!(anychar, |c:char| c != quote) => { |c:char| Some(c as u8) }
     ),
     Vec::new(),
     |mut acc:Vec<u8>, c:Option<u8>| { match c { Some(c) => acc.push(c), None => () }; acc }
@@ -50,7 +50,7 @@ named_args!(longbytes(quote: char) <StrSpan, Vec<u8>>,
   fold_many0!(
     alt!(
       call!(escapedchar)
-    | verify!(tuple!(peek!(take!(3)), none_of!("\\")), |(s,_):(StrSpan,_)| { s.fragment.0.chars().collect::<Vec<char>>() != vec![quote,quote,quote] }) => { |(_,c)| Some(c as u8) }
+    | verify!(tuple!(peek!(take!(3)), anychar), |(s,_):(StrSpan,_)| { s.fragment.0.chars().collect::<Vec<char>>() != vec![quote,quote,quote] }) => { |(_,c)| Some(c as u8) }
     ),
     Vec::new(),
     |mut acc:Vec<u8>, c:Option<u8>| { match c { Some(c) => acc.push(c), None => () }; acc }

@@ -538,7 +538,7 @@ fn format_expr(e: &Expression) -> String {
         Expression::Attribute(e, ref n) =>
             format!("{}.{}", format_expr(e), n),
         Expression::Uop(op, ref e) =>
-            format!("{}{}", op, format_expr(e)),
+            format!("{}({})", op, format_expr(e)),
         Expression::Bop(op, ref e1, ref e2) => {
             let f = |e:&_| match *e {
                 Expression::Ellipsis | Expression::None | Expression::True |
@@ -614,6 +614,14 @@ fn format_import(imp: &Import) -> String {
                 }
                 s2
             })));
+        },
+        Import::ImportStarFrom { leading_dots, ref path } => {
+            s.push_str("from ");
+            for _ in 0..leading_dots {
+                s.push_str(".");
+            }
+            s.push_str(&format_dotted_name(path));
+            s.push_str(" import *");
         },
         Import::Import { ref names } => {
             s.push_str("import ");

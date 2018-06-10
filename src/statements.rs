@@ -166,8 +166,8 @@ named!(raise_stmt<StrSpan, Statement>,
   do_parse!(
     tag!("raise") >>
     t: opt!(tuple!(
-      preceded!(space_sep2, call_test!()),
-      opt!(preceded!(tuple!(space_sep2, tag!("from"), space_sep2), call_test!()))
+      preceded!(spaces2, call_test!()),
+      opt!(preceded!(ws2!(tag!("from")), call_test!()))
     )) >> (
       match t {
         Some((exc, Some(from_exc))) => Statement::RaiseExcFrom(*exc, *from_exc),
@@ -250,7 +250,12 @@ named!(import_from<StrSpan, Import>,
     | call!(ImportParser::<NewlinesAreNotSpaces>::import_as_names)
     ) >> ({
       let (leading_dots, path) = import_from;
-      Import::ImportFrom { leading_dots, path, names }
+      if names.len() > 0 {
+          Import::ImportFrom { leading_dots, path, names }
+      }
+      else {
+          Import::ImportStarFrom { leading_dots, path }
+      }
     })
   )
 );
@@ -287,10 +292,10 @@ named!(dotted_as_name<StrSpan, (Vec<Name>, Option<Name>)>,
 
 // import_as_names: import_as_name (',' import_as_name)* [',']
 named!(import_as_names<StrSpan, Vec<(Name, Option<Name>)>>,
-  terminated!(
-    separated_nonempty_list!(ws2!(char!(',')), call!(Self::import_as_name)),
-    opt!(tuple!(spaces!(), char!(','), spaces!()))
-  )
+  ws3!(terminated!(
+    separated_nonempty_list!(ws3!(char!(',')), call!(Self::import_as_name)),
+    opt!(ws3!(char!(',')))
+  ))
 );
 
 // dotted_as_names: dotted_as_name (',' dotted_as_name)*
@@ -338,7 +343,7 @@ named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
 );
 named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)>,
   do_parse!(
-    space_sep >>
+    spaces >>
     cond: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
     ws2!(char!(':')) >>
     block: call!(block, indent) >> (
@@ -350,19 +355,21 @@ named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)
 
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
-  switch!(peek!(ws2!(first_word)),
-    "if" => call!(if_stmt, indent)
-  | "for" => call!(for_stmt, indent)
-  | "while" => call!(while_stmt, indent)
-  | "try" => call!(try_stmt, indent)
-  | "with" => call!(with_stmt, indent)
-  | "def" => call!(decorated, indent)
-  | "class" => call!(decorated, indent)
-  | "async" => alt!(
+  switch!(map!(peek!(ws2!(take!(1))), |s| s.fragment.0),
+    "i" => call!(if_stmt, indent)
+  | "f" => call!(for_stmt, indent)
+  | "w" => alt!(
+      call!(while_stmt, indent)
+    | call!(with_stmt, indent)
+    )
+  | "t" => call!(try_stmt, indent)
+  | "d" => call!(decorated, indent)
+  | "c" => call!(decorated, indent)
+  | "a" => alt!(
       call!(decorated, indent) // ASYNC funcdef
     | call!(for_stmt, indent)
     )
-  | _ => call!(decorated, indent)
+  | "@" => call!(decorated, indent)
   )
 );
 
@@ -417,12 +424,11 @@ named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
     count!(char!(' '), indent) >>
     async: opt!(tuple!(tag!("async"), space_sep2)) >>
     tag!("for") >>
-    space_sep2 >>
+    spaces >>
     item: call!(ExpressionParser::<NewlinesAreNotSpaces>::exprlist) >>
-    space_sep2 >>
-    tag!("in") >>
-    space_sep2 >>
+    ws2!(tag!("in")) >>
     iterator: call!(ExpressionParser::<NewlinesAreNotSpaces>::exprlist) >>
+    spaces >>
     ws2!(char!(':')) >>
     for_block: call!(block, indent) >>
     else_block: call!(else_block, indent) >> ({
@@ -450,9 +456,10 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
       newline >>
       count!(char!(' '), indent) >> 
       tag!("except") >>
-      space_sep2 >>
+      spaces >>
       catch_what: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
-      catch_as: opt!(preceded!(tuple!(space_sep2, tag!("as"), space_sep2), name)) >>
+      spaces >>
+      catch_as: opt!(preceded!(tuple!(tag!("as"), space_sep2), name)) >>
       ws2!(char!(':')) >>
       block: call!(block, indent) >> (
         (*catch_what, catch_as, block)
@@ -498,11 +505,11 @@ named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     count!(char!(' '), indent) >>
     tag!("with") >>
-    space_sep2 >>
+    spaces2 >>
     contexts: separated_nonempty_list!(ws2!(char!(',')), do_parse!(
       context: call!(ExpressionParser::<NewlinesAreNotSpaces>::expr) >>
       as_: opt!(preceded!(
-        tuple!(space_sep2, tag!("as"), space_sep2), 
+        ws2!(tag!("as")), 
         call!(ExpressionParser::<NewlinesAreNotSpaces>::expr)
       )) >> (
         (*context, as_.map(|e| *e))

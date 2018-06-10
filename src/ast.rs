@@ -162,7 +162,7 @@ impl fmt::Display for Bop {
             Bop::Add => "+",
             Bop::Sub => "-",
             Bop::Mult => "*",
-            Bop::Matmult => "]",
+            Bop::Matmult => "@",
             Bop::Mod => "%",
             Bop::Floordiv => "//",
             Bop::Div => "/",
@@ -264,8 +264,12 @@ pub enum Import {
         path: Vec<Name>,
         /// For `from x import y, z`, this `vec![(y, None), (vec![z], None)]`.
         /// For `from x import y as z`, this `vec![(y, Some(z))]`.
-        /// For `from x import *`, this is `vec![]`.
         names: Vec<(Name, Option<Name>)>
+    },
+    /// For `from x import *`, this is `vec![]`.
+    ImportStarFrom {
+        leading_dots: usize,
+        path: Vec<Name>,
     },
     /// `import x.y as z, foo.bar` is
     /// `Import::Import(vec![(vec![x, y], Some(z)), (vec![foo, bar], None)])`.

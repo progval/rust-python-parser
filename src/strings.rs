@@ -57,7 +57,7 @@ named_args!(shortstring(quote: char) <StrSpan, String>,
   fold_many0!(
     alt!(
       call!(escapedchar)
-    | verify!(none_of!("\\"), |c:char| c != quote) => { |c:char| Some(c) }
+    | verify!(anychar, |c:char| c != quote) => { |c:char| Some(c) }
     ),
     String::new(),
     |mut acc:String, c:Option<char>| { match c { Some(c) => acc.push_str(&c.to_string()), None => () }; acc }
@@ -68,7 +68,7 @@ named_args!(longstring(quote: char) <StrSpan, String>,
   fold_many0!(
     alt!(
       call!(escapedchar)
-    | verify!(tuple!(peek!(take!(3)), none_of!("\\")), |(s,_):(StrSpan,_)| { s.fragment.0.chars().collect::<Vec<char>>() != vec![quote,quote,quote] }) => { |(_,c)| Some(c) }
+    | verify!(tuple!(peek!(take!(3)), anychar), |(s,_):(StrSpan,_)| { s.fragment.0.chars().collect::<Vec<char>>() != vec![quote,quote,quote] }) => { |(_,c)| Some(c) }
     ),
     String::new(),
     |mut acc:String, c:Option<char>| { match c { Some(c) => acc.push_str(&c.to_string()), None => () }; acc }
