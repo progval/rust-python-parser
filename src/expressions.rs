@@ -304,10 +304,10 @@ named!(atom<StrSpan, Box<Expression>>,
 // testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
 named!(testlist_comp<StrSpan, TestlistCompReturn>,
   do_parse!(
-    first: alt!(
+    first: ws3!(alt!(
         call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
       | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
-      ) >>
+      )) >>
     r: alt!(
       call!(Self::comp_for) => { |comp| TestlistCompReturn::Comp(Box::new(first), comp) }
     | opt!(delimited!(
@@ -418,8 +418,8 @@ named!(dictorsetmaker<StrSpan, Box<Expression>>,
 
 named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
   map!(
-    opt!(ws4!(alt!(
-      delimited!(char!(','), separated_list!(char!(','), call!(Self::dictitem)), opt!(ws4!(char!(',')))) => { |v: Vec<_>| {
+    opt!(alt!(
+      ws4!(delimited!(char!(','), separated_list!(char!(','), call!(Self::dictitem)), opt!(ws4!(char!(','))))) => { |v: Vec<_>| {
         let mut v = v;
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::DictLiteral(v))
@@ -427,7 +427,7 @@ named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
     | preceded!(peek!(tuple!(tag!("for"), call!(helpers::space_sep))), call!(Self::comp_for)) => { |comp| {
         Box::new(Expression::DictComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
-    ))),
+    )),
     |rest| {
       match rest {
           Some(r) => r,
@@ -439,8 +439,8 @@ named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
 
 named_args!(setmaker(item1: SetItem) <StrSpan, Box<Expression>>,
   do_parse!(
-    rest:opt!(ws4!(alt!(
-      delimited!(char!(','), separated_list!(char!(','), call!(Self::setitem)), opt!(ws4!(char!(',')))) => { |v: Vec<_>| {
+    rest:opt!(alt!(
+      ws4!(delimited!(char!(','), separated_list!(char!(','), call!(Self::setitem)), opt!(ws4!(char!(','))))) => { |v: Vec<_>| {
         let mut v = v;
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::SetLiteral(v))
@@ -448,7 +448,7 @@ named_args!(setmaker(item1: SetItem) <StrSpan, Box<Expression>>,
     | call!(Self::comp_for) => { |comp| {
         Box::new(Expression::SetComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
-    ))) >> (
+    )) >> (
       match rest {
           Some(r) => r,
           None => Box::new(Expression::SetLiteral(vec![item1])),
@@ -565,7 +565,6 @@ named!(comp_for<StrSpan, Vec<ComprehensionChunk>>,
 );
 named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChunk>>,
   do_parse!(
-    space_sep!() >>
     async: map!(opt!(terminated!(tag!("async"), space_sep!())), |o| o.is_some()) >>
     tag!("for") >>
     space_sep!() >>
@@ -574,6 +573,7 @@ named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionC
     tag!("in") >>
     space_sep!() >>
     iterator: map!(call!(Self::or_test), |e| *e) >>
+    spaces!() >>
     r: call!(Self::opt_comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::For { async, item, iterator }); acc }) >> (
       r
     )
@@ -583,7 +583,6 @@ named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionC
 // comp_if: 'if' test_nocond [comp_iter]
 named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChunk>>,
   do_parse!(
-    space_sep!() >>
     tag!("if") >>
     space_sep!() >>
     cond: map!(call!(Self::test_nocond), |e| *e) >>
@@ -1513,7 +1512,7 @@ mod tests {
     fn test_comp_for() {
         let comp_for = ExpressionParser::<NewlinesAreNotSpaces>::comp_for;
 
-        assert_parse_eq(comp_for(make_strspan(" for bar in baz")), Ok((make_strspan(""), vec![
+        assert_parse_eq(comp_for(make_strspan("for bar in baz")), Ok((make_strspan(""), vec![
             ComprehensionChunk::For {
                 async: false,
                 item: vec![
