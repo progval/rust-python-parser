@@ -405,6 +405,47 @@ fn format_typed_param(param: &(Name, Option<Expression>, Option<Expression>)) ->
     s
 }
 
+fn format_untyped_params(param: &UntypedArgsList) -> String {
+    let UntypedArgsList { ref positional_args, ref star_args, ref keyword_args, ref star_kwargs } = *param;
+    let mut s = String::new();
+
+    s.push_str(&comma_join(positional_args.iter().map(format_untyped_param)));
+    if positional_args.len() > 0 {
+        s.push_str(", ");
+    }
+
+    match star_args {
+        StarParams::No => (),
+        StarParams::Anonymous => s.push_str("*, "),
+        StarParams::Named(ref name) => {
+            s.push_str(name);
+        },
+    }
+
+    s.push_str(&comma_join(keyword_args.iter().map(format_untyped_param)));
+    if keyword_args.len() > 0 {
+        s.push_str(", ");
+    }
+
+    if let Some(name) = star_kwargs {
+        s.push_str("**");
+        s.push_str(name);
+        s.push_str(", ");
+    }
+
+    s
+}
+
+fn format_untyped_param(param: &(Name, Option<Expression>)) -> String {
+    let (name, value) = param;
+    let mut s = name.to_string();
+    if let Some(ref value) = value {
+        s.push_str("=");
+        s.push_str(&format_expr(value));
+    }
+    s
+}
+
 fn format_subscript(sub: &Subscript) -> String {
     match *sub {
         Subscript::Simple(ref e) => format_expr(e),
@@ -496,9 +537,11 @@ fn format_expr(e: &Expression) -> String {
             format!("({}) if ({}) else ({})", format_expr(e1), format_expr(e2), format_expr(e3)),
         Expression::Star(ref e) =>
             format!("*{}", format_expr(e)),
-        Expression::Yield(_) => unimplemented!(),
-        Expression::YieldFrom(_) => unimplemented!(),
-        Expression::Lambdef(_, _) => unimplemented!(),
+        Expression::Yield(ref items) =>
+            format!("yield {}", comma_join(items.iter().map(format_expr))),
+        Expression::YieldFrom(ref iterable) => format!("yield from {}", format_expr(iterable)),
+        Expression::Lambdef(ref params, ref body) =>
+            format!("lambda {}: {}", format_untyped_params(params), format_expr(body))
     }
 }
 
