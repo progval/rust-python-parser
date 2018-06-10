@@ -115,6 +115,8 @@ mod tests {
             Expression::Float(41.43))));
         assert_parse_eq(number(make_strspan("42.")), Ok((make_strspan(""),
             Expression::Float(42.))));
+        assert_parse_eq(number(make_strspan("6.0")), Ok((make_strspan(""),
+            Expression::Float(6.))));
 
         assert_parse_eq(number(make_strspan(".42e10")), Ok((make_strspan(""),
             Expression::Float(0.42e10))));

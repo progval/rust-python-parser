@@ -472,6 +472,14 @@ fn format_comp(comp: &ComprehensionChunk) -> String {
     }
 }
 
+fn format_float(n: f64) -> String {
+    let mut s = n.to_string();
+    if s.find('.').is_none() {
+        s.push_str(".");
+    }
+    s
+}
+
 fn format_expr(e: &Expression) -> String {
     match e {
         Expression::Ellipsis => "...".to_string(),
@@ -481,11 +489,20 @@ fn format_expr(e: &Expression) -> String {
         Expression::Name(ref n) => n.to_string(),
         Expression::Int(ref n) => n.to_string(),
         Expression::ImaginaryInt(ref n) => format!("{}j", n),
-        Expression::Float(ref n) => n.to_string(),
-        Expression::ImaginaryFloat(ref n) => format!("{}j", n),
+        Expression::Float(ref n) => format_float(*n),
+        Expression::ImaginaryFloat(ref n) => format!("{}j", format_float(*n)),
         Expression::String(ref v) => {
             space_join(v.iter().map(|PyString { prefix, content }|
-                format!("{}{:?}", prefix, content) // FIXME: that's cheating
+                format!("{}\"{}\"", prefix, content.chars().map(|c| match c {
+                    '\r' => "\\r".to_string(),
+                    '\n' => "\\n".to_string(),
+                    '\t' => "\\t".to_string(),
+                    '\\' => "\\\\".to_string(),
+                    '"' => "\\\"".to_string(),
+                    c if c.is_ascii() => c.to_string(),
+                    c if (c as u32) <= 0xffff => format!("\\u{:04}", c as u32),
+                    c => format!("\\U{:08}", c as u32),
+                }).collect::<Vec<_>>()[..].concat())
             ))
         },
         Expression::Bytes(ref b) => {
