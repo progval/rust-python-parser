@@ -44,7 +44,7 @@ named!(pub test<StrSpan, Box<Expression>>,
   | do_parse!(
       left: call!(Self::or_test) >>
       right: opt!(do_parse!(
-        space_sep!() >>
+        spaces!() >>
         tag!("if") >>
         space_sep!() >>
         cond: call!(Self::or_test) >>
