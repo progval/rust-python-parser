@@ -10,9 +10,9 @@ import subprocess
 
 def test_file(path):
     with open(path) as f:
-        expected_ast = astpretty.pformat(ast.parse(f.read()), show_position=False)
+        expected_ast = astpretty.pformat(ast.parse(f.read()), show_offsets=False)
     printer_output = subprocess.check_output(['cargo', 'run', path])
-    received_ast = astpretty.pformat(ast.parse(printer_output), show_position=False)
+    received_ast = astpretty.pformat(ast.parse(printer_output), show_offsets=False)
     if expected_ast == received_ast:
         print('{}: ok'.format(path))
         return
