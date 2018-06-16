@@ -592,43 +592,51 @@ named!(pub yield_expr<StrSpan, Expression>,
 mod tests {
     use helpers::{NewlinesAreNotSpaces, make_strspan, assert_parse_eq};
     use super::*;
+    
+    #[cfg(feature="wtf8")]
+    fn new_pystring(prefix: &str, s: &str) -> PyString {
+        PyString { prefix: prefix.to_string(), content: PyStringContent::from_str(s) }
+    }
+    
+    #[cfg(not(feature="wtf8"))]
+    fn new_pystring(prefix: &str, s: &str) -> PyString {
+        PyString { prefix: prefix.to_string(), content: s.to_string() }
+    }
 
     #[test]
     fn test_string() {
         let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
-        let new_pystring = |s: &str| PyString { prefix: "".to_string(), content: s.to_string() };
         assert_parse_eq(atom(make_strspan(r#""foo" "#)), Ok((make_strspan(" "),
-            Box::new(Expression::String(vec![new_pystring("foo")])))
+            Box::new(Expression::String(vec![new_pystring("", "foo")])))
         ));
         assert_parse_eq(atom(make_strspan(r#""foo" "bar""#)), Ok((make_strspan(""),
-            Box::new(Expression::String(vec![new_pystring("foo"), new_pystring("bar")])))
+            Box::new(Expression::String(vec![new_pystring("", "foo"), new_pystring("", "bar")])))
         ));
         assert_parse_eq(atom(make_strspan(r#""fo\"o" "#)), Ok((make_strspan(" "),
-            Box::new(Expression::String(vec![new_pystring("fo\"o")])))
+            Box::new(Expression::String(vec![new_pystring("", "fo\"o")])))
         ));
         assert_parse_eq(atom(make_strspan(r#""fo"o" "#)), Ok((make_strspan(r#"o" "#),
-            Box::new(Expression::String(vec![new_pystring("fo")])))
+            Box::new(Expression::String(vec![new_pystring("", "fo")])))
         ));
         assert_parse_eq(atom(make_strspan(r#""fo \" o" "#)), Ok((make_strspan(" "),
-            Box::new(Expression::String(vec![new_pystring("fo \" o")])))
+            Box::new(Expression::String(vec![new_pystring("", "fo \" o")])))
         ));
         assert_parse_eq(atom(make_strspan(r#"'fo \' o' "#)), Ok((make_strspan(" "),
-            Box::new(Expression::String(vec![new_pystring("fo ' o")])))
+            Box::new(Expression::String(vec![new_pystring("", "fo ' o")])))
         ));
         assert_parse_eq(atom(make_strspan(r#"r'fo \' o' "#)), Ok((make_strspan(" "),
-            Box::new(Expression::String(vec![PyString { prefix: "r".to_string(), content: "fo \\' o".to_string() }])))
+            Box::new(Expression::String(vec![new_pystring("r", "fo \\' o")])))
         ));
 
         assert_parse_eq(atom(make_strspan(r#"'\x8a'"#)), Ok((make_strspan(""),
-            Box::new(Expression::String(vec![new_pystring("\u{8a}")])))
+            Box::new(Expression::String(vec![new_pystring("", "\u{8a}")])))
         ));
     }
 
     #[test]
     fn test_triple_quotes_string() {
-        let new_pystring = |s: &str| PyString { prefix: "".to_string(), content: s.to_string() };
         let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
-        assert_parse_eq(atom(make_strspan(r#"'''fo ' o''' "#)), Ok((make_strspan(" "), Box::new(Expression::String(vec![new_pystring("fo ' o")])))));
+        assert_parse_eq(atom(make_strspan(r#"'''fo ' o''' "#)), Ok((make_strspan(" "), Box::new(Expression::String(vec![new_pystring("", "fo ' o")])))));
     }
 
     #[test]

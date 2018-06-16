@@ -449,6 +449,43 @@ fn format_float(n: f64) -> String {
     s
 }
 
+#[cfg(feature="wtf8")]
+fn format_string(v: &Vec<PyString>) -> String {
+    space_join(v.iter().map(|PyString { prefix, content }|
+        format!("{}\"{}\"", prefix.to_ascii_lowercase().replace("r", ""), content.code_points().map(|c| match c.to_u32() {
+            0xd => "\\r".to_string(),
+            0xa => "\\n".to_string(),
+            0x9 => "\\t".to_string(),
+            0x5c => "\\\\".to_string(),
+            0x22 => "\\\"".to_string(),
+            0x20...0x7e => c.to_char().unwrap().to_string(), // unwrap can't panic
+            0x00...0x1f | 0x7f | 0x80...0xff => format!("\\x{:02x}", c.to_u32()),
+            0x100...0xffff => format!("\\u{:04x}", c.to_u32()),
+            0x10000...0x10ffff => format!("\\U{:08x}", c.to_u32()),
+            _ => unreachable!(),
+        }).collect::<Vec<_>>()[..].concat())
+    ))
+}
+
+#[cfg(not(feature="wtf8"))]
+fn format_string(v: &Vec<PyString>) -> String {
+    space_join(v.iter().map(|PyString { prefix, content }|
+        format!("{}\"{}\"", prefix.to_ascii_lowercase().replace("r", ""), content.chars().map(|c| match c {
+            '\r' => "\\r".to_string(),
+            '\n' => "\\n".to_string(),
+            '\t' => "\\t".to_string(),
+            '\\' => "\\\\".to_string(),
+            '"' => "\\\"".to_string(),
+            '\x20'...'\x7e' => c.to_string(),
+            '\x00'...'\x1f' | '\x7f' | '\u{80}'...'\u{ff}' => format!("\\x{:02x}", c as u8),
+            '\u{100}'...'\u{ffff}' => format!("\\u{:04x}", c as u16),
+            '\u{10000}'...'\u{10ffff}' => format!("\\U{:08x}", c as u32),
+            _ => unreachable!(),
+        }).collect::<Vec<_>>()[..].concat())
+    ))
+}
+
+
 fn format_expr(e: &Expression) -> String {
     match e {
         Expression::Ellipsis => "...".to_string(),
@@ -460,22 +497,7 @@ fn format_expr(e: &Expression) -> String {
         Expression::ImaginaryInt(ref n) => format!("{}j", n),
         Expression::Float(ref n) => format_float(*n),
         Expression::ImaginaryFloat(ref n) => format!("{}j", format_float(*n)),
-        Expression::String(ref v) => {
-            space_join(v.iter().map(|PyString { prefix, content }|
-                format!("{}\"{}\"", prefix.to_ascii_lowercase().replace("r", ""), content.chars().map(|c| match c {
-                    '\r' => "\\r".to_string(),
-                    '\n' => "\\n".to_string(),
-                    '\t' => "\\t".to_string(),
-                    '\\' => "\\\\".to_string(),
-                    '"' => "\\\"".to_string(),
-                    '\x20'...'\x7e' => c.to_string(),
-                    '\x00'...'\x1f' | '\x7f' | '\u{80}'...'\u{ff}' => format!("\\x{:02x}", c as u8),
-                    '\u{100}'...'\u{ffff}' => format!("\\u{:04x}", c as u16),
-                    '\u{10000}'...'\u{10ffff}' => format!("\\U{:08x}", c as u32),
-                    _ => unreachable!(),
-                }).collect::<Vec<_>>()[..].concat())
-            ))
-        },
+        Expression::String(ref v) => format_string(v),
         Expression::Bytes(ref content) => {
             format!("b\"{}\"", content.iter().map(|b| match b {
                 b'\r' => "\\r".to_string(),

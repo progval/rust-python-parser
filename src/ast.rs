@@ -1,11 +1,25 @@
 use std::fmt;
+
 #[cfg(feature="bigint")]
 use num_bigint::BigUint;
+
+#[cfg(feature="wtf8")]
+use wtf8;
 
 #[cfg(feature="bigint")]
 pub type IntegerType = BigUint;
 #[cfg(not(feature="bigint"))]
 pub type IntegerType = u64;
+
+#[cfg(feature="wtf8")]
+pub type PyStringContent = wtf8::Wtf8Buf;
+#[cfg(feature="wtf8")]
+pub type PyStringCodePoint = wtf8::CodePoint;
+
+#[cfg(not(feature="wtf8"))]
+pub type PyStringContent = String;
+#[cfg(not(feature="wtf8"))]
+pub type PyStringCodePoint = char;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ArgumentError {
@@ -206,7 +220,7 @@ pub enum SetItem {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PyString {
     pub prefix: String,
-    pub content: String,
+    pub content: PyStringContent,
 }
 
 #[derive(Clone, Debug, PartialEq)]

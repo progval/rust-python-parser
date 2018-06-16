@@ -5,7 +5,7 @@ authors = ["Valentin Lorentz <progval+git@progval.net>"]
 license = "GPL-3.0-or-later"
 
 [features]
-default = ["bigint"]
+default = ["bigint", "wtf8"]
 bigint = ["num-traits", "num-bigint"]
 
 [[bin]]
@@ -20,6 +20,7 @@ unicode-xid = "^0.1"
 #unicode_names = "^0.1.7"
 num-traits = { version="^0.2.4", optional=true }
 num-bigint = { version="^0.2.0", optional=true }
+wtf8 = { version="^0.0.3", optional=true }
 
 [dev-dependencies]
 pretty_assertions = "^0.4"

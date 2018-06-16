@@ -16,6 +16,9 @@ extern crate num_traits;
 #[cfg(feature="bigint")]
 extern crate num_bigint;
 
+#[cfg(feature="wtf8")]
+extern crate wtf8;
+
 #[macro_use]
 mod helpers;
 #[macro_use]
