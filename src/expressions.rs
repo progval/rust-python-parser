@@ -362,9 +362,18 @@ named!(pub exprlist<StrSpan, Vec<Expression>>,
 named!(pub testlist<StrSpan, Vec<Expression>>,
   separated_nonempty_list!(ws3!(char!(',')), map!(call!(Self::test), |e| *e))
 );
+
+// FIXME: the code of this function is unreadable
 named!(pub possibly_empty_testlist<StrSpan, Vec<Expression>>,
   alt!(
-    terminated!(separated_list!(ws3!(char!(',')), map!(call!(Self::test), |e| *e)), opt!(ws3!(char!(','))))
+    tuple!(separated_nonempty_list!(ws3!(char!(',')), map!(call!(Self::test), |e:Box<_>| *e)), opt!(ws3!(char!(',')))) => { |(mut e, comma):(Vec<_>, _)|
+      match (e.len(), comma) {
+          (0, _) => unreachable!(),
+          (1, Some(_)) => vec![Expression::TupleLiteral(vec![SetItem::Unique(e.remove(0))])], // The remove can't panic, because len == 1
+          (1, None) => vec![e.remove(0)], // The remove can't panic, because len == 1
+          (_, _) => e,
+      }
+    }
   | tag!("") => { |_| Vec::new() }
   )
 );
