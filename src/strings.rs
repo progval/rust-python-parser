@@ -10,7 +10,8 @@ named!(escapedchar<StrSpan, Option<char>>,
     | char!('\\') => { |_| Some('\\') }
     | char!('\'') => { |_| Some('\'') }
     | char!('"') => { |_| Some('"') }
-    | char!('b') => { |_| Some('\x07') } // BEL
+    | char!('a') => { |_| Some('\x07') } // BEL
+    | char!('b') => { |_| Some('\x08') } // BS
     | char!('f') => { |_| Some('\x0c') } // FF
     | char!('n') => { |_| Some('\n') }
     | char!('r') => { |_| Some('\r') }

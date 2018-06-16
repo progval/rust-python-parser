@@ -141,13 +141,13 @@ named!(augassign<StrSpan, AugAssignOp>,
 
 // del_stmt: 'del' exprlist
 named!(del_stmt<StrSpan, Statement>,
-  map!(preceded!(tuple!(tag!("del"), space_sep2), ExpressionParser::<NewlinesAreNotSpaces>::exprlist), |v:Vec<_>| Statement::Del(v))
+  map!(preceded!(tuple!(keyword!("del"), spaces2), ExpressionParser::<NewlinesAreNotSpaces>::exprlist), |v:Vec<_>| Statement::Del(v))
   // TODO: check it's one of the allowed form of del expression
 );
 
 // pass_stmt: 'pass'
 named!(pass_stmt<StrSpan, Statement>,
-  map!(tag!("pass"), |_| Statement::Pass)
+  map!(terminated!(keyword!("pass"), spaces2), |_| Statement::Pass)
 );
 
 // flow_stmt: break_stmt | continue_stmt | return_stmt | raise_stmt | yield_stmt
@@ -157,10 +157,10 @@ named!(pass_stmt<StrSpan, Statement>,
 // yield_stmt: yield_expr
 named!(flow_stmt<StrSpan, Statement>,
   alt!(
-    tag!("break") => { |_| Statement::Break }
-  | tag!("continue") => { |_| Statement::Continue }
+    keyword!("break") => { |_| Statement::Break }
+  | keyword!("continue") => { |_| Statement::Continue }
   | preceded!(
-      tuple!(tag!("return"), space_sep2),
+      tuple!(keyword!("return"), spaces2),
       ws2!(call!(ExpressionParser::<NewlinesAreNotSpaces>::possibly_empty_testlist))
     ) => { |e| Statement::Return(e) }
   | raise_stmt
@@ -172,10 +172,11 @@ named!(flow_stmt<StrSpan, Statement>,
 // raise_stmt: 'raise' [test ['from' test]]
 named!(raise_stmt<StrSpan, Statement>,
   do_parse!(
-    tag!("raise") >>
+    keyword!("raise") >>
+    spaces2 >>
     t: opt!(tuple!(
-      preceded!(spaces2, call_test!()),
-      opt!(preceded!(ws2!(tag!("from")), call_test!()))
+      call_test!(),
+      opt!(preceded!(ws2!(keyword!("from")), call_test!()))
     )) >> (
       match t {
         Some((exc, Some(from_exc))) => Statement::RaiseExcFrom(*exc, *from_exc),
@@ -188,14 +189,14 @@ named!(raise_stmt<StrSpan, Statement>,
 
 // global_stmt: 'global' NAME (',' NAME)*
 named!(global_stmt<StrSpan, Statement>,
-  map!(preceded!(tuple!(tag!("global"), space_sep2),
+  map!(preceded!(tuple!(keyword!("global"), spaces2),
     ws2!(separated_nonempty_list!(ws2!(char!(',')), name))
   ), |names| Statement::Global(names))
 );
 
 // nonlocal_stmt: 'nonlocal' NAME (',' NAME)*
 named!(nonlocal_stmt<StrSpan, Statement>,
-  map!(preceded!(tuple!(tag!("nonlocal"), space_sep2),
+  map!(preceded!(tuple!(keyword!("nonlocal"), spaces2),
     ws2!(separated_nonempty_list!(ws2!(char!(',')), name))
   ), |names| Statement::Nonlocal(names))
 );
@@ -203,8 +204,8 @@ named!(nonlocal_stmt<StrSpan, Statement>,
 // assert_stmt: 'assert' test [',' test]
 named!(assert_stmt<StrSpan, Statement>,
   do_parse!(
-    tag!("assert") >>
-    space_sep2 >>
+    keyword!("assert") >>
+    spaces2 >>
     assertion: call_test!() >>
     msg: opt!(preceded!(ws2!(char!(',')), call_test!())) >> (
       Statement::Assert(*assertion, msg.map(|m| *m))
@@ -226,7 +227,7 @@ named!(import_stmt<StrSpan, Statement>,
 
 // import_name: 'import' dotted_as_names
 named!(import_name<StrSpan, Import>,
-  map!(preceded!(tuple!(tag!("import"), space_sep2), call!(ImportParser::<NewlinesAreNotSpaces>::dotted_as_names)),
+  map!(preceded!(tuple!(keyword!("import"), spaces2), call!(ImportParser::<NewlinesAreNotSpaces>::dotted_as_names)),
     |names| Import::Import { names }
   )
 );
@@ -238,8 +239,8 @@ named!(import_name<StrSpan, Import>,
 // they would recognize ... as an ellipsis.
 named!(import_from<StrSpan, Import>,
   do_parse!(
-    tag!("from") >>
-    space_sep2 >>
+    keyword!("from") >>
+    spaces2 >>
     import_from: alt!(
       preceded!(char!('.'), do_parse!(
         leading_dots: ws2!(map!(many0!(char!('.')), |dots| dots.len()+1)) >>
@@ -250,8 +251,8 @@ named!(import_from<StrSpan, Import>,
     | call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name) => { |n| (0, n) }
     ) >>
     space_sep2 >>
-    tag!("import") >>
-    space_sep2 >>
+    keyword!("import") >>
+    spaces2 >>
     names: alt!(
       char!('*') => { |_| Vec::new() }
     | ws2!(delimited!(char!('('), call!(ImportParser::<NewlinesAreSpaces>::import_as_names), char!(')')))
@@ -277,9 +278,9 @@ impl<ANS: AreNewlinesSpaces> ImportParser<ANS> {
 // import_as_name: NAME ['as' NAME]
 named!(import_as_name<StrSpan, (Name, Option<Name>)>,
   tuple!(name, opt!(do_parse!(
-    space_sep!() >>
-    tag!("as") >>
-    space_sep!() >>
+    spaces!() >>
+    keyword!("as") >>
+    spaces!() >>
     name: name >> (
       name
     )
@@ -289,9 +290,9 @@ named!(import_as_name<StrSpan, (Name, Option<Name>)>,
 // dotted_as_name: dotted_name ['as' NAME]
 named!(dotted_as_name<StrSpan, (Vec<Name>, Option<Name>)>,
   tuple!(call!(Self::dotted_name), opt!(do_parse!(
-    space_sep!() >>
-    tag!("as") >>
-    space_sep!() >>
+    spaces!() >>
+    keyword!("as") >>
+    spaces!() >>
     name: name >> (
       name
     )
@@ -397,11 +398,11 @@ named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
 named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     count!(char!(' '), indent) >>
-    tag!("if") >>
+    keyword!("if") >>
     if_block: call!(cond_and_block, indent) >>
     elif_blocks: many0!(
       preceded!(
-        tuple!(newline, count!(char!(' '), indent), tag!("elif")),
+        tuple!(newline, count!(char!(' '), indent), keyword!("elif")),
         call!(cond_and_block, indent)
       )
     ) >>
@@ -417,7 +418,7 @@ named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
 named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     count!(char!(' '), indent) >>
-    tag!("while") >>
+    keyword!("while") >>
     while_block: call!(cond_and_block, indent) >>
     else_block: call!(else_block, indent) >> ({
       let (cond, while_block) = while_block;
@@ -431,10 +432,10 @@ named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     count!(char!(' '), indent) >>
     async: opt!(tuple!(tag!("async"), space_sep2)) >>
-    tag!("for") >>
+    keyword!("for") >>
     spaces >>
     item: call!(ExpressionParser::<NewlinesAreNotSpaces>::exprlist) >>
-    ws2!(tag!("in")) >>
+    ws2!(keyword!("in")) >>
     iterator: call!(ExpressionParser::<NewlinesAreNotSpaces>::exprlist) >>
     spaces >>
     ws2!(char!(':')) >>
@@ -463,11 +464,11 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
     except_clauses: many0!(do_parse!(
       newline >>
       count!(char!(' '), indent) >> 
-      tag!("except") >>
+      keyword!("except") >>
       spaces >>
       catch_what: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
       spaces >>
-      catch_as: opt!(preceded!(tuple!(tag!("as"), space_sep2), name)) >>
+      catch_as: opt!(ws2!(preceded!(keyword!("as"), name))) >>
       ws2!(char!(':')) >>
       block: call!(block, indent) >> (
         (*catch_what, catch_as, block)
@@ -512,12 +513,12 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
 named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     count!(char!(' '), indent) >>
-    tag!("with") >>
+    keyword!("with") >>
     spaces2 >>
     contexts: separated_nonempty_list!(ws2!(char!(',')), do_parse!(
       context: call!(ExpressionParser::<NewlinesAreNotSpaces>::expr) >>
       as_: opt!(preceded!(
-        ws2!(tag!("as")), 
+        ws2!(keyword!("as")), 
         call!(ExpressionParser::<NewlinesAreNotSpaces>::expr)
       )) >> (
         (*context, as_.map(|e| *e))
@@ -650,6 +651,25 @@ mod tests {
                 vec![
                     (
                         Expression::Name("foo".to_string()),
+                        vec![
+                            Statement::Del(vec![Expression::Name("bar".to_string())])
+                        ]
+                    ),
+                ],
+                None
+            )
+        )));
+    }
+
+    #[test]
+    fn test_if_not() {
+        assert_parse_eq(compound_stmt(make_strspan("if not foo:\n del bar"), 0), Ok((make_strspan(""),
+            CompoundStatement::If(
+                vec![
+                    (
+                        Expression::Uop(Uop::Not,
+                            Box::new(Expression::Name("foo".to_string())),
+                        ),
                         vec![
                             Statement::Del(vec![Expression::Name("bar".to_string())])
                         ]

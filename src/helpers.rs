@@ -131,6 +131,14 @@ named!(pub name<StrSpan, String>,
   )
 );
 
+named!(pub word_end<StrSpan, ()>,
+  not!(verify!(peek!(::nom::anychar), |c| UnicodeXID::is_xid_continue(c)))
+);
+
+macro_rules! keyword {
+    ($i:expr, $kw:expr) => { terminated!($i, tag!($kw), word_end) }
+}
+
 named!(pub newline<StrSpan, ()>,
   map!(
     many1!(

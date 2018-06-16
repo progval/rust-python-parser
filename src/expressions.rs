@@ -3,9 +3,7 @@ use std::marker::PhantomData;
 use nom::{IResult, Err, Context, ErrorKind};
 //use unicode_names;
 
-use helpers;
-use helpers::{StrSpan, name};
-use helpers::{AreNewlinesSpaces, NewlinesAreSpaces};
+use helpers::*;
 use functions::varargslist;
 use bytes::bytes;
 use strings::string;
@@ -44,9 +42,9 @@ named!(pub test<StrSpan, Box<Expression>>,
   | do_parse!(
       left: call!(Self::or_test) >>
       right: opt!(do_parse!(
-        ws3!(tag!("if")) >>
+        ws3!(keyword!("if")) >>
         cond: call!(Self::or_test) >>
-        ws3!(tag!("else")) >>
+        ws3!(keyword!("else")) >>
         right: call!(Self::test) >> (
           (cond, right)
         )
@@ -70,23 +68,22 @@ named!(test_nocond<StrSpan, Box<Expression>>,
 
 // lambdef: 'lambda' [varargslist] ':' test
 named!(lambdef<StrSpan, Box<Expression>>,
-  do_parse!(
-    tag!("lambda") >>
-    args: opt!(preceded!(space_sep!(), varargslist)) >>
+  ws3!(do_parse!(
+    keyword!("lambda") >>
+    args: opt!(varargslist) >>
     spaces!() >>
     char!(':') >>
     spaces!() >>
     code: call!(Self::test) >> (
       Box::new(Expression::Lambdef(args.unwrap_or_default(), code))
     )
-  )
+  ))
 );
 
 // lambdef_nocond: 'lambda' [varargslist] ':' test_nocond
 named!(lambdef_nocond<StrSpan, Box<Expression>>,
   do_parse!(
-    tag!("lambda") >>
-    space_sep!() >>
+    keyword!("lambda") >>
     args: opt!(varargslist) >>
     char!(':') >>
     code: call!(Self::test_nocond) >> (
@@ -129,18 +126,18 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 
 // or_test: and_test ('or' and_test)*
 bop!(or_test, Self::and_test, alt!(
-  tuple!(tag!("or"), space_sep!()) => { |_| Bop::Or }
+  keyword!("or") => { |_| Bop::Or }
 ));
 
 // and_test: not_test ('and' not_test)*
 bop!(and_test, Self::not_test, alt!(
-  tuple!(tag!("and"), space_sep!()) => { |_| Bop::And }
+  keyword!("and") => { |_| Bop::And }
 ));
 
 // not_test: 'not' not_test | comparison
 named!(not_test<StrSpan, Box<Expression>>,
   alt!(
-    preceded!(tuple!(tag!("not"), space_sep!()), call!(Self::comparison)) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
+    preceded!(tuple!(keyword!("not"), spaces!()), call!(Self::comparison)) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
   | call!(Self::comparison)
   )
 );
@@ -155,8 +152,8 @@ bop!(comparison, Self::expr, alt!(
 | char!('>') => { |_| Bop::Gt }
 | tag!("!=") => { |_| Bop::Neq }
 | tag!("in") => { |_| Bop::In }
-| tuple!(tag!("not"), space_sep!(), tag!("in"), space_sep!()) => { |_| Bop::NotIn }
-| tuple!(tag!("is"), space_sep!(), tag!("not"), space_sep!()) => { |_| Bop::IsNot }
+| tuple!(tag!("not"), space_sep!(), keyword!("in")) => { |_| Bop::NotIn }
+| tuple!(tag!("is"), space_sep!(), keyword!("not")) => { |_| Bop::IsNot }
 | tuple!(tag!("is"), space_sep!()) => { |_| Bop::Is }
 ));
 
@@ -259,9 +256,9 @@ named!(atom_expr<StrSpan, Box<Expression>>,
 named!(atom<StrSpan, Box<Expression>>,
   map!(alt!(
     tag!("...") => { |_| Expression::Ellipsis }
-  | tag!("None") => { |_| Expression::None }
-  | tag!("True") => { |_| Expression::True }
-  | tag!("False") => { |_| Expression::False }
+  | keyword!("None") => { |_| Expression::None }
+  | keyword!("True") => { |_| Expression::True }
+  | keyword!("False") => { |_| Expression::False }
   | separated_nonempty_list!(spaces!(), string) => { |s| Expression::String(s) }
   | separated_nonempty_list!(spaces!(), bytes) => { |v| {
       let mut v2 = Vec::new();
@@ -270,12 +267,12 @@ named!(atom<StrSpan, Box<Expression>>,
     }}
   | number
   | name => { |n| Expression::Name(n) }
-  | ws3!(tuple!(char!('['), ws4!(opt!(char!(' '))), char!(']'))) => { |_| Expression::ListLiteral(vec![]) }
-  | ws3!(tuple!(char!('{'), ws4!(opt!(char!(' '))), char!('}'))) => { |_| Expression::DictLiteral(vec![]) }
-  | ws3!(tuple!(char!('('), ws4!(opt!(char!(' '))), char!(')'))) => { |_| Expression::TupleLiteral(vec![]) }
-  | ws3!(delimited!(char!('{'), ws4!(map!(
+  | tuple!(char!('['), ws4!(opt!(char!(' '))), char!(']')) => { |_| Expression::ListLiteral(vec![]) }
+  | tuple!(char!('{'), ws4!(opt!(char!(' '))), char!('}')) => { |_| Expression::DictLiteral(vec![]) }
+  | tuple!(char!('('), ws4!(opt!(char!(' '))), char!(')')) => { |_| Expression::TupleLiteral(vec![]) }
+  | delimited!(char!('{'), ws4!(map!(
       call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker), |e:Box<_>| *e
-    )), char!('}')))
+    )), char!('}'))
   | map_opt!(ws3!(delimited!(char!('('), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(')'))),  |ret| {
@@ -290,12 +287,12 @@ named!(atom<StrSpan, Box<Expression>>,
           TestlistCompReturn::Single(SetItem::Star(_)) => None,
       }
     })
-  | ws3!(delimited!(char!('('), ws4!(
+  | delimited!(char!('('), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::yield_expr)
-    ), char!(')')))
-  | ws3!(delimited!(char!('['), ws4!(
+    ), char!(')'))
+  | delimited!(char!('['), ws4!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
-    ), char!(']'))) => { |ret| {
+    ), char!(']')) => { |ret| {
       match ret {
           TestlistCompReturn::Comp(e, comp) => Expression::ListComp(e, comp),
           TestlistCompReturn::Lit(v) => Expression::ListLiteral(v),
@@ -428,7 +425,7 @@ named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::DictLiteral(v))
       }}
-    | preceded!(peek!(tuple!(tag!("for"), call!(helpers::space_sep))), call!(Self::comp_for)) => { |comp| {
+    | preceded!(peek!(keyword!("for")), call!(Self::comp_for)) => { |comp| {
         Box::new(Expression::DictComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
     )),
@@ -570,11 +567,11 @@ named!(comp_for<StrSpan, Vec<ComprehensionChunk>>,
 named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChunk>>,
   do_parse!(
     async: map!(opt!(terminated!(tag!("async"), space_sep!())), |o| o.is_some()) >>
-    tag!("for") >>
+    keyword!("for") >>
     spaces!() >>
     item: call!(Self::exprlist) >>
     spaces!() >>
-    tag!("in") >>
+    keyword!("in") >>
     spaces!() >>
     iterator: map!(call!(Self::or_test), |e| *e) >>
     spaces!() >>
@@ -587,7 +584,7 @@ named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionC
 // comp_if: 'if' test_nocond [comp_iter]
 named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChunk>>,
   do_parse!(
-    tag!("if") >>
+    keyword!("if") >>
     spaces!() >>
     cond: map!(call!(Self::test_nocond), |e| *e) >>
     spaces!() >>
@@ -601,14 +598,14 @@ named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChu
 // yield_expr: 'yield' [yield_arg]
 // yield_arg: 'from' test | testlist
 named!(pub yield_expr<StrSpan, Expression>,
-  preceded!(
-    tag!("yield"),
-    alt!(
-      preceded!(tuple!(space_sep!(), tag!("from"), space_sep!()), call!(Self::test)) => { |e| Expression::YieldFrom(e) }
-    | preceded!(space_sep!(), call!(Self::testlist)) => { |e| Expression::Yield(e) }
-    | ws3!(tag!("")) => { |_| Expression::Yield(Vec::new()) }
-    )
-  )
+  ws3!(preceded!(
+    keyword!("yield"),
+    ws3!(alt!(
+      preceded!(ws3!(keyword!("from")), call!(Self::test)) => { |e| Expression::YieldFrom(e) }
+    | call!(Self::testlist) => { |e| Expression::Yield(e) }
+    | tag!("") => { |_| Expression::Yield(Vec::new()) }
+    ))
+  ))
 );
 
 } // End ExpressionParser

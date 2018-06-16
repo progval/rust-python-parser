@@ -11,7 +11,8 @@ named!(escapedchar<StrSpan, Option<u8>>,
     | char!('\\') => { |_| Some(b'\\') }
     | char!('\'') => { |_| Some(b'\'') }
     | char!('"') => { |_| Some(b'"') }
-    | char!('b') => { |_| Some(b'\x07') } // BEL
+    | char!('a') => { |_| Some(b'\x07') } // BEL
+    | char!('b') => { |_| Some(b'\x08') } // BS
     | char!('f') => { |_| Some(b'\x0c') } // FF
     | char!('n') => { |_| Some(b'\n') }
     | char!('r') => { |_| Some(b'\r') }
