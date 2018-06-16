@@ -82,18 +82,15 @@ pub struct UntypedArgsList {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Decorator {
     pub name: Vec<Name>,
-    pub args: Option<Arglist>,
+    pub args: Option<Vec<Argument>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Argument<T> {
-    Normal(T),
-    Star(Expression),
-}
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct Arglist {
-    pub positional_args: Vec<Argument<Expression>>,
-    pub keyword_args: Vec<Argument<(Name, Expression)>>,
+pub enum Argument {
+    Positional(Expression),
+    Starargs(Expression),
+    Keyword(Name, Expression),
+    Kwargs(Expression),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -234,7 +231,7 @@ pub enum Expression {
     ListComp(Box<SetItem>, Vec<ComprehensionChunk>),
     Generator(Box<SetItem>, Vec<ComprehensionChunk>),
 
-    Call(Box<Expression>, Arglist),
+    Call(Box<Expression>, Vec<Argument>),
     Subscript(Box<Expression>, Vec<Subscript>),
     /// `foo.bar`
     Attribute(Box<Expression>, Name),
@@ -352,7 +349,7 @@ pub struct Funcdef {
 pub struct Classdef {
     pub decorators: Vec<Decorator>,
     pub name: String,
-    pub arguments: Arglist,
+    pub arguments: Vec<Argument>,
     pub code: Vec<Statement>,
 }
 

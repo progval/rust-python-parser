@@ -328,28 +328,14 @@ fn format_setitem(si: &SetItem) -> String {
     }
 }
 
-fn format_pos_arg(arg: &Argument<Expression>) -> String {
-    match *arg {
-        Argument::Normal(ref e) => format_expr(e),
-        Argument::Star(ref e) => format!("*{}", format_expr(e)),
-    }
-}
-
-fn format_kw_arg(arg: &Argument<(Name, Expression)>) -> String {
-    match *arg {
-        Argument::Normal((ref n, ref e)) => format!("{}={}", n, format_expr(e)),
-        Argument::Star(ref e) => format!("**{}", format_expr(e)),
-    }
-}
-
-fn format_args(args: &Arglist) -> String {
-    let Arglist { ref positional_args, ref keyword_args } = *args;
+fn format_args(args: &Vec<Argument>) -> String {
     let mut s = String::new();
-    s.push_str(&comma_join(positional_args.iter().map(format_pos_arg)));
-    if positional_args.len() > 0 && keyword_args.len() > 0 {
-        s.push_str(", ");
-    }
-    s.push_str(&comma_join(keyword_args.iter().map(format_kw_arg)));
+    s.push_str(&comma_join(args.iter().map(|ref arg| match arg {
+        Argument::Positional(ref e) => format_expr(e),
+        Argument::Starargs(ref e) => format!("*{}", format_expr(e)),
+        Argument::Keyword(ref n, ref e) => format!("{}={}", n, format_expr(e)),
+        Argument::Kwargs(ref e) => format!("**{}", format_expr(e)),
+    })));
     s
 }
 

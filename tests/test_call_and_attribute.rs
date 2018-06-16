@@ -21,11 +21,11 @@ fn test_call_and_attribute() {
                                     Box::new(Expression::Name("foo".to_string())),
                                     "bar".to_string(),
                                 )),
-                                Arglist::default(),
+                                Vec::new(),
                             )),
                             "baz".to_string(),
                         )),
-                        Arglist::default(),
+                        Vec::new(),
                     ),
                 ],
             ],
@@ -50,13 +50,10 @@ fn test_call_and_attribute2() {
                             Box::new(Expression::Name("foo".to_string())),
                             "bar".to_string(),
                         )),
-                        Arglist {
-                            positional_args: vec![
-                                Argument::Normal(Expression::Name("baz".to_string())),
-                                Argument::Normal(Expression::Name("qux".to_string())),
-                            ],
-                            keyword_args: vec![],
-                        }
+                        vec![
+                            Argument::Positional(Expression::Name("baz".to_string())),
+                            Argument::Positional(Expression::Name("qux".to_string())),
+                        ],
                     ),
                 ],
             ],

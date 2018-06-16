@@ -300,28 +300,25 @@ mod tests {
         assert_parse_eq(decorator(make_strspan("@foo(baz)\n"), 0), Ok((make_strspan(""),
             Decorator {
                 name: vec!["foo".to_string()],
-                args: Some(Arglist {
-                    positional_args: vec![Argument::Normal(Expression::Name("baz".to_string()))],
-                    keyword_args: Vec::new(),
-                })
+                args: Some(
+                    vec![Argument::Positional(Expression::Name("baz".to_string()))],
+                )
             }
         )));
         assert_parse_eq(decorator(make_strspan("@foo.bar(baz)\n"), 0), Ok((make_strspan(""),
             Decorator {
                 name: vec!["foo".to_string(), "bar".to_string()],
-                args: Some(Arglist {
-                    positional_args: vec![Argument::Normal(Expression::Name("baz".to_string()))],
-                    keyword_args: Vec::new(),
-                })
+                args: Some(
+                    vec![Argument::Positional(Expression::Name("baz".to_string()))],
+                )
             }
         )));
         assert_parse_eq(decorator(make_strspan("  @foo.bar(baz)\n"), 2), Ok((make_strspan(""),
             Decorator {
                 name: vec!["foo".to_string(), "bar".to_string()],
-                args: Some(Arglist {
-                    positional_args: vec![Argument::Normal(Expression::Name("baz".to_string()))],
-                    keyword_args: Vec::new(),
-                })
+                args: Some(
+                    vec![Argument::Positional(Expression::Name("baz".to_string()))],
+                )
             }
         )));
     }
