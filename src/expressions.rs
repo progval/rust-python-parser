@@ -128,7 +128,7 @@ bop!(and_test, Self::not_test, alt!(
 // not_test: 'not' not_test | comparison
 named!(not_test<StrSpan, Box<Expression>>,
   alt!(
-    preceded!(tuple!(keyword!("not"), spaces!()), call!(Self::comparison)) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
+    preceded!(tuple!(keyword!("not"), spaces!()), call!(Self::not_test)) => { |e| Box::new(Expression::Uop(Uop::Not, e)) }
   | call!(Self::comparison)
   )
 );
@@ -815,6 +815,24 @@ mod tests {
                 Box::new(Expression::Uop(Uop::Plus,
                     Box::new(Expression::Name("bar".to_string())),
                 )),
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_not() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+        assert_parse_eq(test(make_strspan("not foo")), Ok((make_strspan(""),
+            Box::new(Expression::Uop(Uop::Not,
+                Box::new(Expression::Name("foo".to_string())),
+            ))
+        )));
+
+        assert_parse_eq(test(make_strspan("not not foo")), Ok((make_strspan(""),
+            Box::new(Expression::Uop(Uop::Not,
+                Box::new(Expression::Uop(Uop::Not,
+                    Box::new(Expression::Name("foo".to_string())),
+                ))
             ))
         )));
     }

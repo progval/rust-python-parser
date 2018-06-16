@@ -383,34 +383,26 @@ fn format_typed_param(param: &(Name, Option<Expression>, Option<Expression>)) ->
 
 fn format_untyped_params(param: &UntypedArgsList) -> String {
     let UntypedArgsList { ref positional_args, ref star_args, ref keyword_args, ref star_kwargs } = *param;
-    let mut s = String::new();
 
-    s.push_str(&comma_join(positional_args.iter().map(format_untyped_param)));
-    if positional_args.len() > 0 {
-        s.push_str(", ");
-    }
+    let mut chunks = Vec::new();
+
+    chunks.extend(positional_args.iter().map(format_untyped_param));
 
     match star_args {
         StarParams::No => (),
-        StarParams::Anonymous => s.push_str("*, "),
+        StarParams::Anonymous => chunks.push("*".to_string()),
         StarParams::Named(ref name) => {
-            s.push_str("*");
-            s.push_str(name);
+            chunks.push(format!("*{}", name))
         },
     }
 
-    s.push_str(&comma_join(keyword_args.iter().map(format_untyped_param)));
-    if keyword_args.len() > 0 {
-        s.push_str(", ");
-    }
+    chunks.extend(keyword_args.iter().map(format_untyped_param));
 
     if let Some(name) = star_kwargs {
-        s.push_str("**");
-        s.push_str(name);
-        s.push_str(", ");
+        chunks.push(format!("**{}", name));
     }
 
-    s
+    comma_join(&chunks)
 }
 
 fn format_untyped_param(param: &(Name, Option<Expression>)) -> String {
@@ -522,10 +514,6 @@ fn format_expr(e: &Expression) -> String {
 
         Expression::Call(e, ref args) => {
             match **e {
-                Expression::Ellipsis | Expression::None | Expression::True |
-                Expression::False | Expression::Int(_) |
-                Expression::ImaginaryInt(_) | Expression::ImaginaryFloat(_) |
-                Expression::Float(_) | Expression::String(_) | Expression::Bytes(_) |
                 Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
                 Expression::ListComp(_, _) | Expression::Generator(_, _) |
                 Expression::DictLiteral(_) | Expression::SetLiteral(_) |
@@ -536,13 +524,9 @@ fn format_expr(e: &Expression) -> String {
             }
         },
         Expression::Subscript(e, ref sub) =>
-            format!("{}[{}]", format_expr(e), comma_join(sub.iter().map(format_subscript))),
+            format!("({})[{}]", format_expr(e), comma_join(sub.iter().map(format_subscript))),
         Expression::Attribute(e, ref n) => {
             match **e {
-                Expression::Ellipsis | Expression::None | Expression::True |
-                Expression::False | Expression::Int(_) |
-                Expression::ImaginaryInt(_) | Expression::ImaginaryFloat(_) |
-                Expression::Float(_) | Expression::String(_) | Expression::Bytes(_) |
                 Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
                 Expression::ListComp(_, _) | Expression::Generator(_, _) |
                 Expression::DictLiteral(_) | Expression::SetLiteral(_) |

@@ -55,19 +55,19 @@ named!(escaped_newline<StrSpan, ()>,
 );
 
 named!(pub spaces<StrSpan, ()>,
-  map!(many0!(alt!(one_of!(" \t") => { |_|() } | escaped_newline | newline)), |_| ())
+  map!(many0!(alt!(one_of!(" \t\x0c") => { |_|() } | escaped_newline | newline)), |_| ())
 );
 
 named!(pub spaces2<StrSpan, ()>,
-  map!(many0!(alt!(one_of!(" \t") => { |_| () }|escaped_newline)), |_| ())
+  map!(many0!(alt!(one_of!(" \t\x0c") => { |_| () }|escaped_newline)), |_| ())
 );
 
 named!(pub space_sep<StrSpan, ()>,
-  map!(many1!(alt!(one_of!(" \t") => { |_|() } | escaped_newline | newline)), |_| ())
+  map!(many1!(alt!(one_of!(" \t\x0c") => { |_|() } | escaped_newline | newline)), |_| ())
 );
 
 named!(pub space_sep2<StrSpan, ()>,
-  map!(many1!(alt!(one_of!(" \t") => { |_| () } | escaped_newline)), |_| ())
+  map!(many1!(alt!(one_of!(" \t\x0c") => { |_| () } | escaped_newline)), |_| ())
 );
 
 // Let me explain this ugliness.
@@ -117,7 +117,7 @@ macro_rules! space_sep {
     }
 }
 
-const KEYWORDS: [&'static str; 1] = ["yield"];
+const KEYWORDS: [&'static str; 2] = ["yield", "import"];
 named!(pub name<StrSpan, String>,
   do_parse!(
     name: map!(

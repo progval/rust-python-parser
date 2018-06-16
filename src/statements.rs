@@ -242,22 +242,23 @@ named!(import_from<StrSpan, Import>,
     keyword!("from") >>
     spaces2 >>
     import_from: alt!(
-      preceded!(char!('.'), do_parse!(
-        leading_dots: ws2!(map!(many0!(char!('.')), |dots| dots.len()+1)) >>
+      do_parse!(
+        leading_dots: ws2!(map!(many0!(char!('.')), |dots| dots.len())) >>
         from_name: opt!(call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name)) >> (
           (leading_dots, from_name.unwrap_or(Vec::new()))
         )
-      ))
+      )
     | call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name) => { |n| (0, n) }
     ) >>
-    space_sep2 >>
-    keyword!("import") >>
+    spaces2 >>
+    dbg_dmp!(keyword!("import")) >>
     spaces2 >>
     names: alt!(
       char!('*') => { |_| Vec::new() }
     | ws2!(delimited!(char!('('), call!(ImportParser::<NewlinesAreSpaces>::import_as_names), char!(')')))
     | call!(ImportParser::<NewlinesAreNotSpaces>::import_as_names)
-    ) >> ({
+    ) >>
+    ({
       let (leading_dots, path) = import_from;
       if names.len() > 0 {
           Import::ImportFrom { leading_dots, path, names }
@@ -1104,6 +1105,57 @@ mod tests {
         assert_parse_eq(statement(make_strspan("import foo"), 0), Ok((make_strspan(""),
             vec![Statement::Import(Import::Import {
                 names: vec![(vec!["foo".to_string()], None)],
+            })]
+        )));
+    }
+
+    #[test]
+    fn test_import_from () {
+        assert_parse_eq(statement(make_strspan("from . import foo"), 0), Ok((make_strspan(""),
+            vec![Statement::Import(Import::ImportFrom {
+                leading_dots: 1,
+                path: vec![],
+                names: vec![("foo".to_string(), None)],
+            })]
+        )));
+
+        assert_parse_eq(statement(make_strspan("from . import foo as bar"), 0), Ok((make_strspan(""),
+            vec![Statement::Import(Import::ImportFrom {
+                leading_dots: 1,
+                path: vec![],
+                names: vec![("foo".to_string(), Some("bar".to_string()))],
+            })]
+        )));
+
+        assert_parse_eq(statement(make_strspan("from qux import foo"), 0), Ok((make_strspan(""),
+            vec![Statement::Import(Import::ImportFrom {
+                leading_dots: 0,
+                path: vec!["qux".to_string()],
+                names: vec![("foo".to_string(), None)],
+            })]
+        )));
+
+        assert_parse_eq(statement(make_strspan("from qux import foo as bar"), 0), Ok((make_strspan(""),
+            vec![Statement::Import(Import::ImportFrom {
+                leading_dots: 0,
+                path: vec!["qux".to_string()],
+                names: vec![("foo".to_string(), Some("bar".to_string()))],
+            })]
+        )));
+
+        assert_parse_eq(statement(make_strspan("from .qux import foo"), 0), Ok((make_strspan(""),
+            vec![Statement::Import(Import::ImportFrom {
+                leading_dots: 1,
+                path: vec!["qux".to_string()],
+                names: vec![("foo".to_string(), None)],
+            })]
+        )));
+
+        assert_parse_eq(statement(make_strspan("from .qux import foo as bar"), 0), Ok((make_strspan(""),
+            vec![Statement::Import(Import::ImportFrom {
+                leading_dots: 1,
+                path: vec!["qux".to_string()],
+                names: vec![("foo".to_string(), Some("bar".to_string()))],
             })]
         )));
     }
