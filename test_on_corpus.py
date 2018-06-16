@@ -7,12 +7,18 @@ import tempfile
 import unittest
 import astpretty
 import subprocess
+import threading
+import multiprocessing
 
 def test_file(path):
     with open(path) as f:
         expected_ast = astpretty.pformat(ast.parse(f.read()), show_offsets=False)
-    printer_output = subprocess.check_output(['cargo', 'run', path])
-    received_ast = astpretty.pformat(ast.parse(printer_output), show_offsets=False)
+    printer_output = subprocess.check_output(['cargo', '--quiet', 'run', path])
+    try:
+        received_ast = astpretty.pformat(ast.parse(printer_output), show_offsets=False)
+    except:
+        print('Error while parsing the output from {}:'.format(path))
+        raise
     if expected_ast == received_ast:
         print('{}: ok'.format(path))
         return
@@ -38,23 +44,39 @@ def test_file(path):
     print('========================')
     exit(1)
 
-def test_dir(path):
+def test_dir(path, with_threads=False):
+    sem = threading.BoundedSemaphore(value=multiprocessing.cpu_count())
+    def thread(path):
+        sem.acquire()
+        try:
+            test_file(path)
+        finally:
+            sem.release()
+
     for (dirpath, dirname, filenames) in os.walk(path):
         if any(x.startswith('.') for x in dirpath.split(os.path.sep)):
             # dotfile
             continue
         for filename in filenames:
             if os.path.splitext(filename)[1] == '.py':
-                test_file(os.path.join(dirpath, filename))
+                if with_threads:
+                    threading.Thread(target=thread, args=(os.path.join(dirpath, filename),)).start()
+                else:
+                    test_file(os.path.join(dirpath, filename))
 
 
 
 def main():
+    if '--with-threads' in sys.argv:
+        sys.argv.remove('--with-threads')
+        with_threads = True
+    else:
+        with_threads = False
     for path in sys.argv[1:]:
         if os.path.isfile(path):
             test_file(path)
         elif os.path.isdir(path):
-            test_dir(path)
+            test_dir(path, with_threads=with_threads)
         else:
             print('Error: no such file or directory: {}'.format(path))
             exit(1)
