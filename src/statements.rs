@@ -141,7 +141,7 @@ named!(augassign<StrSpan, AugAssignOp>,
 
 // del_stmt: 'del' exprlist
 named!(del_stmt<StrSpan, Statement>,
-  map!(preceded!(tuple!(keyword!("del"), spaces2), ExpressionParser::<NewlinesAreNotSpaces>::exprlist), |v:Vec<_>| Statement::Del(v))
+  map!(delimited!(tuple!(keyword!("del"), spaces2), ExpressionParser::<NewlinesAreNotSpaces>::exprlist, opt!(char!(','))), |v:Vec<_>| Statement::Del(v))
   // TODO: check it's one of the allowed form of del expression
 );
 

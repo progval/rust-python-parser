@@ -298,7 +298,7 @@ named!(testlist_comp<StrSpan, TestlistCompReturn>,
   do_parse!(
     first: ws3!(alt!(
         call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
-      | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
+      | preceded!(char!('*'), call!(Self::expr)) => { |e: Box<_>| SetItem::Star(*e) }
       )) >>
     r: alt!(
       call!(Self::comp_for) => { |comp| TestlistCompReturn::Comp(Box::new(first), comp) }
@@ -307,7 +307,7 @@ named!(testlist_comp<StrSpan, TestlistCompReturn>,
         separated_list!(ws3!(char!(',')),
           alt!(
             call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
-          | call!(Self::star_expr) => { |e: Box<_>| SetItem::Star(*e) }
+          | preceded!(char!('*'), call!(Self::expr)) => { |e: Box<_>| SetItem::Star(*e) }
           )
         ),
         ws3!(opt!(char!(',')))
@@ -363,7 +363,10 @@ named!(pub testlist<StrSpan, Vec<Expression>>,
   separated_nonempty_list!(ws3!(char!(',')), map!(call!(Self::test), |e| *e))
 );
 named!(pub possibly_empty_testlist<StrSpan, Vec<Expression>>,
-  separated_list!(ws3!(char!(',')), map!(call!(Self::test), |e| *e))
+  alt!(
+    terminated!(separated_list!(ws3!(char!(',')), map!(call!(Self::test), |e| *e)), opt!(ws3!(char!(','))))
+  | tag!("") => { |_| Vec::new() }
+  )
 );
 
 } // end ExpressionParser
@@ -501,6 +504,7 @@ named!(pub arglist<StrSpan, Vec<Argument>>,
         )
       )
     ) >>
+    opt!(ws4!(char!(','))) >>
     (args)
   ))
 );

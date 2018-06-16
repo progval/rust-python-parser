@@ -36,6 +36,7 @@ def test_file(path):
         else:
             assert False, 'diff did not detect a different, but should have.'
     print('========================')
+    exit(1)
 
 def test_dir(path):
     for (dirpath, dirname, filenames) in os.walk(path):

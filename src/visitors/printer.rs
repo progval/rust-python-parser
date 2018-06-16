@@ -394,6 +394,7 @@ fn format_untyped_params(param: &UntypedArgsList) -> String {
         StarParams::No => (),
         StarParams::Anonymous => s.push_str("*, "),
         StarParams::Named(ref name) => {
+            s.push_str("*");
             s.push_str(name);
         },
     }
