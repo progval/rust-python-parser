@@ -602,10 +602,11 @@ named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChu
 // yield_arg: 'from' test | testlist
 named!(pub yield_expr<StrSpan, Expression>,
   preceded!(
-    tuple!(tag!("yield"), space_sep!()),
+    tag!("yield"),
     alt!(
-      preceded!(tuple!(tag!("from"), space_sep!()), call!(Self::test)) => { |e| Expression::YieldFrom(e) }
-    | call!(Self::testlist) => { |e| Expression::Yield(e) }
+      preceded!(tuple!(space_sep!(), tag!("from"), space_sep!()), call!(Self::test)) => { |e| Expression::YieldFrom(e) }
+    | preceded!(space_sep!(), call!(Self::testlist)) => { |e| Expression::Yield(e) }
+    | ws3!(tag!("")) => { |_| Expression::Yield(Vec::new()) }
     )
   )
 );
@@ -1727,6 +1728,18 @@ mod tests {
             Box::new(Expression::Bop(Bop::Leq,
                 Box::new(Expression::Name("a".to_string())),
                 Box::new(Expression::Name("b".to_string())),
+            ))
+        )));
+    }
+
+    #[test]
+    fn test_yield() {
+        let test = ExpressionParser::<NewlinesAreNotSpaces>::test;
+
+        assert_parse_eq(test(make_strspan("lambda: (yield)")), Ok((make_strspan(""),
+            Box::new(Expression::Lambdef(
+                Default::default(),
+                Box::new(Expression::Yield(Vec::new())),
             ))
         )));
     }

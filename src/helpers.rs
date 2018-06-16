@@ -117,12 +117,17 @@ macro_rules! space_sep {
     }
 }
 
+const KEYWORDS: [&'static str; 1] = ["yield"];
 named!(pub name<StrSpan, String>,
-  map!(
-    tuple!(
-      alt!(char!('_') | verify!(call!(::nom::anychar), |c| UnicodeXID::is_xid_start(c))),
-      take_while!(call!(|c| UnicodeXID::is_xid_continue(c)))
-    ), |(c, s)| format!("{}{}", c, s.fragment)
+  do_parse!(
+    name: map!(
+      tuple!(
+        alt!(char!('_') | verify!(call!(::nom::anychar), |c| UnicodeXID::is_xid_start(c))),
+        take_while!(call!(|c| UnicodeXID::is_xid_continue(c)))
+      ), |(c, s)| format!("{}{}", c, s.fragment)
+    ) >>
+    verify!(tag!(""), |_| !KEYWORDS.contains(&&name[..])) >>
+    (name)
   )
 );
 

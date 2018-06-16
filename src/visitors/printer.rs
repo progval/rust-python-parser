@@ -258,7 +258,9 @@ fn format_decorators(indent: usize, decorators: &Vec<Decorator>) -> String {
         s.push_str("@");
         s.push_str(&dot_join(name));
         if let Some(ref arglist) = args {
+            s.push_str("(");
             s.push_str(&format_args(arglist));
+            s.push_str(")");
         }
         s.push_str("\n");
     }
@@ -531,12 +533,38 @@ fn format_expr(e: &Expression) -> String {
         Expression::Generator(e, ref comp) =>
             format!("({} {})", format_setitem(e), space_join(comp.iter().map(format_comp))),
 
-        Expression::Call(e, ref args) =>
-            format!("{}({})", format_expr(e), format_args(args)),
+        Expression::Call(e, ref args) => {
+            match **e {
+                Expression::Ellipsis | Expression::None | Expression::True |
+                Expression::False | Expression::Int(_) |
+                Expression::ImaginaryInt(_) | Expression::ImaginaryFloat(_) |
+                Expression::Float(_) | Expression::String(_) | Expression::Bytes(_) |
+                Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
+                Expression::ListComp(_, _) | Expression::Generator(_, _) |
+                Expression::DictLiteral(_) | Expression::SetLiteral(_) |
+                Expression::ListLiteral(_) | Expression::TupleLiteral(_) |
+                Expression::Attribute(_, _) | Expression::Call(_, _) =>
+                    format!("{}({})", format_expr(e), format_args(args)),
+                _ => format!("({})({})", format_expr(e), format_args(args)),
+            }
+        },
         Expression::Subscript(e, ref sub) =>
             format!("{}[{}]", format_expr(e), comma_join(sub.iter().map(format_subscript))),
-        Expression::Attribute(e, ref n) =>
-            format!("{}.{}", format_expr(e), n),
+        Expression::Attribute(e, ref n) => {
+            match **e {
+                Expression::Ellipsis | Expression::None | Expression::True |
+                Expression::False | Expression::Int(_) |
+                Expression::ImaginaryInt(_) | Expression::ImaginaryFloat(_) |
+                Expression::Float(_) | Expression::String(_) | Expression::Bytes(_) |
+                Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
+                Expression::ListComp(_, _) | Expression::Generator(_, _) |
+                Expression::DictLiteral(_) | Expression::SetLiteral(_) |
+                Expression::ListLiteral(_) | Expression::TupleLiteral(_) |
+                Expression::Attribute(_, _) | Expression::Call(_, _) =>
+                    format!("{}.{}", format_expr(e), n),
+                _ => format!("({}).{}", format_expr(e), n),
+            }
+        },
         Expression::Uop(op, ref e) =>
             format!("{}({})", op, format_expr(e)),
         Expression::Bop(op, ref e1, ref e2) => {
@@ -548,7 +576,8 @@ fn format_expr(e: &Expression) -> String {
                 Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
                 Expression::ListComp(_, _) | Expression::Generator(_, _) |
                 Expression::DictLiteral(_) | Expression::SetLiteral(_) |
-                Expression::ListLiteral(_) | Expression::TupleLiteral(_) =>
+                Expression::ListLiteral(_) | Expression::TupleLiteral(_) |
+                Expression::Attribute(_, _) | Expression::Call(_, _) =>
                     format!("{}", format_expr(e)),
                 _ => format!("({})", format_expr(e)),
             };
@@ -572,9 +601,12 @@ fn format_expr(e: &Expression) -> String {
             format!("({}) if ({}) else ({})", format_expr(e1), format_expr(e2), format_expr(e3)),
         Expression::Star(ref e) =>
             format!("*{}", format_expr(e)),
+
+        // https://mail.python.org/pipermail/python-list/2013-August/653288.html
         Expression::Yield(ref items) =>
-            format!("yield {}", comma_join(items.iter().map(format_expr))),
-        Expression::YieldFrom(ref iterable) => format!("yield from {}", format_expr(iterable)),
+            format!("(yield {})", comma_join(items.iter().map(format_expr))),
+        Expression::YieldFrom(ref iterable) => format!("(yield from {})", format_expr(iterable)),
+
         Expression::Lambdef(ref params, ref body) =>
             format!("lambda {}: {}", format_untyped_params(params), format_expr(body))
     }

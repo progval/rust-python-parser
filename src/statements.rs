@@ -95,15 +95,23 @@ named!(expr_stmt<StrSpan, Statement>,
 
 // testlist_star_expr: (test|star_expr) (',' (test|star_expr))* [',']
 named!(testlist_star_expr<StrSpan, Vec<Expression>>,
-  terminated!(
-    separated_nonempty_list!(
+  do_parse!(
+    list: separated_nonempty_list!(
       ws2!(char!(',')),
       map!(alt!(
         call!(ExpressionParser::<NewlinesAreNotSpaces>::test)
       | call!(ExpressionParser::<NewlinesAreNotSpaces>::star_expr)
       ), |e| *e)
-    ),
-    opt!(ws2!(char!(',')))
+    ) >>
+    trailing_comma: opt!(ws2!(char!(','))) >> (
+      if trailing_comma.is_some() && list.len() < 2 {
+          // This prevents "foo, =" from being parsed as "foo ="
+          vec![Expression::TupleLiteral(list.into_iter().map(SetItem::Unique).collect())]
+      }
+      else {
+          list
+      }
+    )
   )
 );
 
@@ -1077,6 +1085,17 @@ mod tests {
             vec![Statement::Import(Import::Import {
                 names: vec![(vec!["foo".to_string()], None)],
             })]
+        )));
+    }
+
+    #[test]
+    fn test_unpack() {
+        assert_parse_eq(testlist_star_expr(make_strspan("foo,")), Ok((make_strspan(""),
+            vec![
+                Expression::TupleLiteral(vec![
+                    SetItem::Unique(Expression::Name("foo".to_string())),
+                ]),
+            ]
         )));
     }
 }

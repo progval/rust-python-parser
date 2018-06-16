@@ -116,7 +116,7 @@ impl IsItTyped for Typed {
 
     named!(fpdef<StrSpan, Self::Return>,
       ws4!(tuple!(name,
-        opt!(preceded!(char!(':'), call!(ExpressionParser::<NewlinesAreSpaces>::test)))
+        opt!(ws4!(preceded!(char!(':'), call!(ExpressionParser::<NewlinesAreSpaces>::test))))
       ))
     );
 
@@ -212,8 +212,9 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
       | do_parse!( // Parse this part: '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
           tag!("*") >>
           star_args: opt!(call!(IIT::fpdef)) >>
-          keyword_args: separated_list!(char!(','), call!(IIT::fpdef_with_default)) >>
-          star_kwargs: opt!(ws4!(preceded!(char!(','), opt!(ws4!(preceded!(tag!("**"), call!(IIT::fpdef))))))) >> (
+          keyword_args: many0!(preceded!(char!(','), call!(IIT::fpdef_with_default))) >>
+          star_kwargs: opt!(ws4!(preceded!(char!(','), opt!(ws4!(preceded!(tag!("**"), call!(IIT::fpdef))))))) >>
+          opt!(ws4!(char!(','))) >> (
             IIT::make_list(Vec::new(), Some(star_args), keyword_args, star_kwargs.unwrap_or(None))
           )
         )
@@ -227,8 +228,8 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
            * Parse positional arguments:
            * tfpdef ['=' test] (',' tfpdef ['=' test])*
            */
-          positional_args: separated_nonempty_list!(ws2!(char!(',')), call!(IIT::fpdef_with_default)) >>
-          r: opt!(ws4!(preceded!(char!(','), opt!( // FIXME: ws! is needed here because it does not traverse opt!
+          positional_args: separated_nonempty_list!(ws4!(char!(',')), call!(IIT::fpdef_with_default)) >>
+          r: opt!(ws4!(preceded!(char!(','), opt!(ws4!(
 
             alt!(
               /************
@@ -253,7 +254,7 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
               )
 
             )
-          )))) >> (
+          ))))) >> (
             /************
              * Case 3c: positional arguments are not followed by anything
              */
@@ -612,6 +613,32 @@ mod tests {
                 star_args: StarParams::Anonymous,
                 keyword_args: vec![
                     ("bar".to_string(), None),
+                ],
+                star_kwargs: Some("kwargs".to_string()),
+            }
+        )));
+    }
+
+    #[test]
+    fn test_starargs_first() {
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("*foo, bar, **kwargs")), Ok((make_strspan(""),
+            UntypedArgsList {
+                positional_args: vec![
+                ],
+                star_args: StarParams::Named("foo".to_string()),
+                keyword_args: vec![
+                    ("bar".to_string(), None),
+                ],
+                star_kwargs: Some("kwargs".to_string()),
+            }
+        )));
+
+        assert_parse_eq(ParamlistParser::<Untyped>::parse(make_strspan("*foo, **kwargs")), Ok((make_strspan(""),
+            UntypedArgsList {
+                positional_args: vec![
+                ],
+                star_args: StarParams::Named("foo".to_string()),
+                keyword_args: vec![
                 ],
                 star_kwargs: Some("kwargs".to_string()),
             }
