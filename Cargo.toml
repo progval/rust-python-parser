@@ -15,7 +15,7 @@ path = "src/main.rs"
 [dependencies]
 nom = "^4.0"
 #nom_locate = { path = "../nom_locate/" }
-nom_locate = { git = "https://github.com/fflorent/nom_locate" }
+nom_locate = "^0.3.0"
 unicode-xid = "^0.1"
 unicode_names2 = "^0.2.1"
 num-traits = { version="^0.2.4", optional=true }

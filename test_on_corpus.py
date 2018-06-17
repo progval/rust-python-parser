@@ -2,6 +2,7 @@
 import os
 import sys
 import ast
+import time
 import difflib
 import tempfile
 import unittest
@@ -13,14 +14,16 @@ import multiprocessing
 def test_file(path):
     with open(path) as f:
         expected_ast = astpretty.pformat(ast.parse(f.read()), show_offsets=False)
-    printer_output = subprocess.check_output(['cargo', '--quiet', 'run', path])
+    before = time.time()
+    printer_output = subprocess.check_output(['./target/release/prettyprint', path])
+    total_time = time.time() - before
     try:
         received_ast = astpretty.pformat(ast.parse(printer_output), show_offsets=False)
     except:
         print('Error while parsing the output from {}:'.format(path))
         raise
     if expected_ast == received_ast:
-        print('{}: ok'.format(path))
+        print('({:03}ms) {}: ok'.format(int(total_time*1000), path))
         return
     print('========================')
     print(path)
@@ -72,6 +75,7 @@ def main():
         with_threads = True
     else:
         with_threads = False
+    subprocess.check_output(['cargo', 'build', '--release'])
     for path in sys.argv[1:]:
         if os.path.isfile(path):
             test_file(path)

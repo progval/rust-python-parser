@@ -1,3 +1,5 @@
+//! Prints the AST as Python code.
+
 use super::super::ast::*;
 
 fn comma_join<'a, T2: ToString, T: IntoIterator<Item=T2>>(i: T) -> String {

@@ -1,3 +1,5 @@
+//! enums and structures that store the syntax tree outputed by the parser.
+
 use std::fmt;
 
 #[cfg(feature="bigint")]
@@ -21,46 +23,9 @@ pub type PyStringContent = String;
 #[cfg(not(feature="wtf8"))]
 pub type PyStringCodePoint = char;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArgumentError {
-    KeywordExpression,
-    PositionalAfterKeyword,
-    StarargsAfterKeyword,
-}
-
-impl ArgumentError {
-    pub fn to_string(self) -> &'static str {
-        match self {
-            ArgumentError::KeywordExpression => "Keyword cannot be an expression.",
-            ArgumentError::PositionalAfterKeyword => "Positional argument after keyword argument or **kwargs.",
-            ArgumentError::StarargsAfterKeyword => "*args after keyword argument or **kwargs.",
-        }
-    }
-}
-
-impl From<u32> for ArgumentError {
-    fn from(i: u32) -> ArgumentError {
-        match i {
-            1 => ArgumentError::KeywordExpression,
-            2 => ArgumentError::PositionalAfterKeyword,
-            3 => ArgumentError::StarargsAfterKeyword,
-            _ => panic!("Invalid error code.")
-        }
-    }
-}
-
-impl From<ArgumentError> for u32 {
-    fn from(e: ArgumentError) -> u32 {
-        match e {
-            ArgumentError::KeywordExpression => 1,
-            ArgumentError::PositionalAfterKeyword => 2,
-            ArgumentError::StarargsAfterKeyword => 3,
-        }
-    }
-}
-
 pub type Name = String;
 
+/// Represents whether a function signature has `*`, `*args`, or none of these.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum StarParams<T> {
     /// No single star
@@ -77,6 +42,7 @@ impl<T> Default for StarParams<T> {
     }
 }
 
+/// The list of parameters of a function definition.
 #[derive(Clone, Debug, PartialEq, Default,)]
 pub struct TypedArgsList {
     pub positional_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
@@ -85,6 +51,7 @@ pub struct TypedArgsList {
     pub star_kwargs: Option<(Name, Option<Expression>)>,
 }
 
+/// The list of parameters of a lambda definition.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct UntypedArgsList {
     pub positional_args: Vec<(Name, Option<Expression>)>,
@@ -93,12 +60,14 @@ pub struct UntypedArgsList {
     pub star_kwargs: Option<Name>,
 }
 
+/// A function or class decorator.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Decorator {
     pub name: Vec<Name>,
     pub args: Option<Vec<Argument>>,
 }
 
+/// An argument to a function call
 #[derive(Clone, Debug, PartialEq)]
 pub enum Argument {
     Positional(Expression),
@@ -107,13 +76,18 @@ pub enum Argument {
     Kwargs(Expression),
 }
 
+/// The `foo[bar]` syntax.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Subscript {
+    /// `foo[i]`
     Simple(Expression),
+    /// `foo[start:end]`, `foo[start:]`, etc.
     Double(Option<Expression>, Option<Expression>),
+    /// `foo[start:end:step]`, `foo[start::]`, etc.
     Triple(Option<Expression>, Option<Expression>, Option<Expression>),
 }
 
+/// Unary operators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Uop {
     Plus,
@@ -134,6 +108,7 @@ impl fmt::Display for Uop {
     }
 }
 
+/// Binary operators.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Bop {
     Add,
@@ -199,30 +174,37 @@ impl fmt::Display for Bop {
     }
 }
 
+/// One of the `if` or `for` clause(s) of a comprehension list/dict/set or
+/// generator expression.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ComprehensionChunk {
     If { cond: Expression },
     For { async: bool, item: Vec<Expression>, iterator: Expression },
 }
 
+/// `**foo` or `foo:bar`, as in a dict comprehension.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DictItem {
     Star(Expression),
     Unique(Expression, Expression),
 }
 
+/// `*foo` or `foo`, as in a list/set comprehension or a generator expression.
 #[derive(Clone, Debug, PartialEq)]
 pub enum SetItem {
     Star(Expression),
     Unique(Expression),
 }
 
+/// A Python string. See the doc of the crate for the boring speech about
+/// encoding stuff.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PyString {
     pub prefix: String,
     pub content: PyStringContent,
 }
 
+/// The big thing: a Python expression.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Ellipsis,
@@ -265,6 +247,7 @@ pub enum Expression {
     Lambdef(UntypedArgsList, Box<Expression>),
 }
 
+/// An import statement.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Import {
     /// `from x import y`
@@ -287,6 +270,7 @@ pub enum Import {
     Import { names: Vec<(Vec<Name>, Option<Name>)> },
 }
 
+/// `+=` and its friends.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AugAssignOp {
     Add,
@@ -324,6 +308,7 @@ impl fmt::Display for AugAssignOp {
     }
 }
 
+/// A Python statement.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Statement {
     Pass,
@@ -349,6 +334,7 @@ pub enum Statement {
     Compound(Box<CompoundStatement>),
 }
 
+/// A function definition, including its decorators.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Funcdef {
     pub async: bool,
@@ -359,6 +345,7 @@ pub struct Funcdef {
     pub code: Vec<Statement>,
 }
 
+/// A class definition, including its decorators.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Classdef {
     pub decorators: Vec<Decorator>,
@@ -367,6 +354,7 @@ pub struct Classdef {
     pub code: Vec<Statement>,
 }
 
+/// A try block.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Try {
     pub try_block: Vec<Statement>,
@@ -380,6 +368,7 @@ pub struct Try {
     pub finally_block: Vec<Statement>,
 }
 
+/// Statements with blocks.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompoundStatement {
     If(Vec<(Expression, Vec<Statement>)>, Option<Vec<Statement>>),

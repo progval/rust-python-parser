@@ -10,7 +10,6 @@ pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
 
 
 /// Like `ws!()`, but does not allow newlines.
-#[macro_export]
 macro_rules! ws2 (
   ($i:expr, $($args:tt)*) => (
     {
@@ -31,7 +30,6 @@ macro_rules! ws2 (
 );
 
 /// Like `ws!()`, but ignores comments as well
-#[macro_export]
 macro_rules! ws4 (
   ($i:expr, $($args:tt)*) => (
     {
@@ -178,6 +176,8 @@ named!(pub semicolon<StrSpan, ()>,
   map!(ws2!(char!(';')), |_| ())
 );
 
+/// Helper to make an instance of `StrSpan`, that can be used as the argument
+/// to other parsers.
 pub fn make_strspan(s: &str) -> StrSpan {
     StrSpan::new(CompleteStr(s))
 }

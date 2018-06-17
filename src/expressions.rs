@@ -1,7 +1,5 @@
 use std::marker::PhantomData;
 
-//use unicode_names;
-
 use helpers::*;
 use functions::varargslist;
 use bytes::bytes;
