@@ -10,16 +10,16 @@ pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
 
 
 /// Like `ws!()`, but does not allow newlines.
-macro_rules! ws2 (
+macro_rules! ws_nonl (
   ($i:expr, $($args:tt)*) => (
     {
       use nom::Convert;
       use nom::Err;
 
-      match sep!($i, $crate::helpers::spaces2, $($args)*) {
+      match sep!($i, $crate::helpers::spaces_nonl, $($args)*) {
         Err(e) => Err(e),
         Ok((i1,o))    => {
-          match $crate::helpers::spaces2(i1) {
+          match $crate::helpers::spaces_nonl(i1) {
             Err(e) => Err(Err::convert(e)),
             Ok((i2,_))    => Ok((i2, o))
           }
@@ -30,16 +30,16 @@ macro_rules! ws2 (
 );
 
 /// Like `ws!()`, but ignores comments as well
-macro_rules! ws4 (
+macro_rules! ws_comm (
   ($i:expr, $($args:tt)*) => (
     {
       use nom::Convert;
       use nom::Err;
 
-      match sep!($i, $crate::helpers::spaces, $($args)*) {
+      match sep!($i, $crate::helpers::spaces_nl, $($args)*) {
         Err(e) => Err(e),
         Ok((i1,o))    => {
-          match $crate::helpers::spaces(i1) {
+          match $crate::helpers::spaces_nl(i1) {
             Err(e) => Err(Err::convert(e)),
             Ok((i2,_))    => Ok((i2, o))
           }
@@ -53,16 +53,16 @@ named!(escaped_newline<StrSpan, ()>,
   map!(terminated!(char!('\\'), char!('\n')), |_| ())
 );
 
-named!(pub spaces<StrSpan, ()>,
+named!(pub spaces_nl<StrSpan, ()>,
   map!(many0!(alt!(one_of!(" \t\x0c") => { |_|() } | escaped_newline | newline)), |_| ())
 );
 
 // Bottleneck:
-// named!(pub spaces2<StrSpan, ()>,
+// named!(pub spaces_nonl<StrSpan, ()>,
 //   map!(many0!(alt!(one_of!(" \t\x0c") => { |_| () }|escaped_newline)), |_| ())
 // );
 // Rewritten as:
-pub fn spaces2(i: StrSpan) -> Result<(StrSpan, ()), ::nom::Err<StrSpan>> {
+pub fn spaces_nonl(i: StrSpan) -> Result<(StrSpan, ()), ::nom::Err<StrSpan>> {
     let mut it = i.fragment.chars().enumerate().peekable();
     while let Some((index, c)) = it.next() {
         let next_char = it.peek().map(|(_,c)|*c);
@@ -82,11 +82,11 @@ pub fn spaces2(i: StrSpan) -> Result<(StrSpan, ()), ::nom::Err<StrSpan>> {
     Ok((i.slice(i.fragment.len()..), ()))
 }
 
-named!(pub space_sep<StrSpan, ()>,
+named!(pub space_sep_nl<StrSpan, ()>,
   map!(many1!(alt!(one_of!(" \t\x0c") => { |_|() } | escaped_newline | newline)), |_| ())
 );
 
-named!(pub space_sep2<StrSpan, ()>,
+named!(pub space_sep_nonl<StrSpan, ()>,
   map!(many1!(alt!(one_of!(" \t\x0c") => { |_| () } | escaped_newline)), |_| ())
 );
 
@@ -116,13 +116,13 @@ pub(crate) struct NewlinesAreNotSpaces; impl AreNewlinesSpaces for NewlinesAreNo
 macro_rules! spaces {
     ( $i:expr, $($args:tt)* ) => {
         match ANS::VALUE {
-            true => call!($i, $crate::helpers::spaces, $($args)*),
-            false => call!($i, $crate::helpers::spaces2, $($args)*),
+            true => call!($i, $crate::helpers::spaces_nl, $($args)*),
+            false => call!($i, $crate::helpers::spaces_nonl, $($args)*),
         }
     }
 }
 
-macro_rules! ws3 {
+macro_rules! ws_auto {
     ( $i:expr, $($args:tt)* ) => {
         delimited!($i, spaces!(), $($args)*, spaces!())
     }
@@ -131,8 +131,8 @@ macro_rules! ws3 {
 macro_rules! space_sep {
     ( $i:expr, $($args:tt)* ) => {
         match ANS::VALUE {
-            true => call!($i, $crate::helpers::space_sep, $($args)*),
-            false => call!($i, $crate::helpers::space_sep2, $($args)*),
+            true => call!($i, $crate::helpers::space_sep_nl, $($args)*),
+            false => call!($i, $crate::helpers::space_sep_nonl, $($args)*),
         }
     }
 }
@@ -163,7 +163,7 @@ named!(pub newline<StrSpan, ()>,
   map!(
     many1!(
       tuple!(
-        spaces2,
+        spaces_nonl,
         opt!(preceded!(char!('#'), many0!(none_of!("\n")))),
         char!('\n')
       )
@@ -173,7 +173,7 @@ named!(pub newline<StrSpan, ()>,
 );
 
 named!(pub semicolon<StrSpan, ()>,
-  map!(ws2!(char!(';')), |_| ())
+  map!(ws_nonl!(char!(';')), |_| ())
 );
 
 /// Helper to make an instance of `StrSpan`, that can be used as the argument

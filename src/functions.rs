@@ -16,8 +16,8 @@ named_args!(decorator(indent: usize) <StrSpan, Decorator>,
   do_parse!(
     count!(char!(' '), indent) >>
     char!('@') >>
-    name: ws2!(call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name)) >>
-    args: opt!(ws2!(delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
+    name: ws_nonl!(call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name)) >>
+    args: opt!(ws_nonl!(delimited!(char!('('), ws_comm!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
     newline >> (
       Decorator { name, args }
     )
@@ -33,7 +33,7 @@ named_args!(decorators(indent: usize) <StrSpan, Vec<Decorator>>,
 named_args!(pub decorated(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     decorators: call!(decorators, indent) >>
-    s: switch!(peek!(ws2!(first_word)),
+    s: switch!(peek!(ws_nonl!(first_word)),
         "def" => call!(funcdef, indent, decorators.clone()) // FIXME: do not clone
       | "async" => call!(funcdef, indent, decorators.clone()) // FIXME: do not clone
       | "class" => call!(classdef, indent, decorators)
@@ -50,13 +50,13 @@ named_args!(pub decorated(indent: usize) <StrSpan, CompoundStatement>,
 named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, CompoundStatement>,
   do_parse!(
     count!(char!(' '), indent) >>
-    async: opt!(tuple!(tag!("async"), space_sep2)) >>
+    async: opt!(tuple!(tag!("async"), space_sep_nonl)) >>
     tag!("def") >>
-    space_sep2 >>
+    space_sep_nonl >>
     name: name >>
-    parameters: ws2!(parameters) >>
-    return_type: opt!(ws2!(preceded!(tag!("->"), call!(ExpressionParser::<NewlinesAreNotSpaces>::test)))) >>
-    ws2!(char!(':')) >>
+    parameters: ws_nonl!(parameters) >>
+    return_type: opt!(ws_nonl!(preceded!(tag!("->"), call!(ExpressionParser::<NewlinesAreNotSpaces>::test)))) >>
+    ws_nonl!(char!(':')) >>
     code: call!(block, indent) >> (
       CompoundStatement::Funcdef(Funcdef {
           async: async.is_some(), decorators, name, parameters, return_type: return_type.map(|t| *t), code
@@ -70,11 +70,11 @@ named_args!(classdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, Compou
   do_parse!(
     count!(char!(' '), indent) >>
     tag!("class") >>
-    space_sep2 >>
+    space_sep_nonl >>
     name: name >>
-    spaces >>
-    arguments: opt!(ws2!(delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
-    ws2!(char!(':')) >> 
+    spaces_nonl >>
+    arguments: opt!(ws_nonl!(delimited!(char!('('), ws_comm!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
+    ws_nonl!(char!(':')) >> 
     code: call!(block, indent) >> (
       CompoundStatement::Classdef(Classdef {
           decorators, name, arguments: arguments.unwrap_or_default(), code
@@ -94,11 +94,11 @@ trait IsItTyped {
     fn fpdef<'a>(input: StrSpan<'a>) -> IResult<StrSpan<'a>, Self::Return, u32>;
 
     fn fpdef_with_default<'a>(i: StrSpan<'a>) -> IResult<StrSpan<'a>, (Self::Return, Option<Box<Expression>>), u32> {
-        ws4!(i, tuple!(
+        ws_comm!(i, tuple!(
             Self::fpdef,
             opt!(
                 preceded!(
-                    ws4!(char!('=')),
+                    ws_comm!(char!('=')),
                     call!(ExpressionParser::<NewlinesAreSpaces>::test)
                 )
             )
@@ -115,8 +115,8 @@ impl IsItTyped for Typed {
     type List = TypedArgsList;
 
     named!(fpdef<StrSpan, Self::Return>,
-      ws4!(tuple!(name,
-        opt!(ws4!(preceded!(char!(':'), call!(ExpressionParser::<NewlinesAreSpaces>::test))))
+      ws_comm!(tuple!(name,
+        opt!(ws_comm!(preceded!(char!(':'), call!(ExpressionParser::<NewlinesAreSpaces>::test))))
       ))
     );
 
@@ -170,7 +170,7 @@ impl IsItTyped for Untyped {
 
 // parameters: '(' [typedargslist] ')'
 named!(parameters<StrSpan, TypedArgsList>,
-  map!(delimited!(char!('('), opt!(ws4!(typedargslist)), char!(')')), |o| o.unwrap_or_default())
+  map!(delimited!(char!('('), opt!(ws_comm!(typedargslist)), char!(')')), |o| o.unwrap_or_default())
 );
 
 // typedargslist: (tfpdef ['=' test] (',' tfpdef ['=' test])* [',' [
@@ -194,7 +194,7 @@ struct ParamlistParser<IIT: IsItTyped> {
     phantom: PhantomData<IIT>
 }
 impl<IIT: IsItTyped> ParamlistParser<IIT> {
-    named!(parse<StrSpan, IIT::List>, ws4!(
+    named!(parse<StrSpan, IIT::List>, ws_comm!(
       alt!(
       /***************************
        * Case 1: only **kwargs
@@ -213,8 +213,8 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
           tag!("*") >>
           star_args: opt!(call!(IIT::fpdef)) >>
           keyword_args: many0!(preceded!(char!(','), call!(IIT::fpdef_with_default))) >>
-          star_kwargs: opt!(ws4!(preceded!(char!(','), opt!(ws4!(preceded!(tag!("**"), call!(IIT::fpdef))))))) >>
-          opt!(ws4!(char!(','))) >> (
+          star_kwargs: opt!(ws_comm!(preceded!(char!(','), opt!(ws_comm!(preceded!(tag!("**"), call!(IIT::fpdef))))))) >>
+          opt!(ws_comm!(char!(','))) >> (
             IIT::make_list(Vec::new(), Some(star_args), keyword_args, star_kwargs.unwrap_or(None))
           )
         )
@@ -228,8 +228,8 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
            * Parse positional arguments:
            * tfpdef ['=' test] (',' tfpdef ['=' test])*
            */
-          positional_args: separated_nonempty_list!(ws4!(char!(',')), call!(IIT::fpdef_with_default)) >>
-          r: opt!(ws4!(preceded!(char!(','), opt!(ws4!(
+          positional_args: separated_nonempty_list!(ws_comm!(char!(',')), call!(IIT::fpdef_with_default)) >>
+          r: opt!(ws_comm!(preceded!(char!(','), opt!(ws_comm!(
 
             alt!(
               /************
@@ -247,8 +247,8 @@ impl<IIT: IsItTyped> ParamlistParser<IIT> {
             | do_parse!(
                 char!('*') >>
                 star_args: opt!(call!(IIT::fpdef)) >>
-                keyword_args: opt!(ws4!(preceded!(char!(','), separated_nonempty_list!(ws4!(char!(',')), call!(IIT::fpdef_with_default))))) >>
-                star_kwargs: opt!(ws4!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: ws! is needed here because it does not traverse opt!
+                keyword_args: opt!(ws_comm!(preceded!(char!(','), separated_nonempty_list!(ws_comm!(char!(',')), call!(IIT::fpdef_with_default))))) >>
+                star_kwargs: opt!(ws_comm!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: ws! is needed here because it does not traverse opt!
                   IIT::make_list(positional_args.clone(), Some(star_args), keyword_args.unwrap_or(Vec::new()), star_kwargs.unwrap_or(None)) // FIXME: do not clone
                 )
               )

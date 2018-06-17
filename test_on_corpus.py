@@ -75,7 +75,8 @@ def main():
         with_threads = True
     else:
         with_threads = False
-    subprocess.check_output(['cargo', 'build', '--release'])
+    subprocess.check_output(['cargo', 'build'])
+    #subprocess.check_output(['cargo', 'build', '--release'])
     for path in sys.argv[1:]:
         if os.path.isfile(path):
             test_file(path)

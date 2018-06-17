@@ -31,9 +31,9 @@ named!(pub test<StrSpan, Box<Expression>>,
   | do_parse!(
       left: call!(Self::or_test) >>
       right: opt!(do_parse!(
-        ws3!(keyword!("if")) >>
+        ws_auto!(keyword!("if")) >>
         cond: call!(Self::or_test) >>
-        ws3!(keyword!("else")) >>
+        ws_auto!(keyword!("else")) >>
         right: call!(Self::test) >> (
           (cond, right)
         )
@@ -57,7 +57,7 @@ named!(test_nocond<StrSpan, Box<Expression>>,
 
 // lambdef: 'lambda' [varargslist] ':' test
 named!(lambdef<StrSpan, Box<Expression>>,
-  ws3!(do_parse!(
+  ws_auto!(do_parse!(
     keyword!("lambda") >>
     args: opt!(varargslist) >>
     spaces!() >>
@@ -221,10 +221,10 @@ named!(atom_expr<StrSpan, Box<Expression>>,
   do_parse!(
     lhs: call!(Self::atom) >>
     trailers: fold_many0!(
-      ws3!(alt!(
-        delimited!(char!('('), ws4!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')) => { |args| Trailer::Call(args) }
-      | delimited!(char!('['), ws4!(separated_list!(char!(','), call!(ExpressionParser::<NewlinesAreSpaces>::subscript))), char!(']')) => { |i| Trailer::Subscript(i) }
-      | preceded!(ws3!(char!('.')), name) => { |name| Trailer::Attribute(name) }
+      ws_auto!(alt!(
+        delimited!(char!('('), ws_comm!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')) => { |args| Trailer::Call(args) }
+      | delimited!(char!('['), ws_comm!(separated_list!(char!(','), call!(ExpressionParser::<NewlinesAreSpaces>::subscript))), char!(']')) => { |i| Trailer::Subscript(i) }
+      | preceded!(ws_auto!(char!('.')), name) => { |name| Trailer::Attribute(name) }
       )),
       lhs,
       |acc, item| Box::new(match item {
@@ -256,13 +256,13 @@ named!(atom<StrSpan, Box<Expression>>,
     }}
   | number
   | name => { |n| Expression::Name(n) }
-  | tuple!(char!('['), ws4!(opt!(char!(' '))), char!(']')) => { |_| Expression::ListLiteral(vec![]) }
-  | tuple!(char!('{'), ws4!(opt!(char!(' '))), char!('}')) => { |_| Expression::DictLiteral(vec![]) }
-  | tuple!(char!('('), ws4!(opt!(char!(' '))), char!(')')) => { |_| Expression::TupleLiteral(vec![]) }
-  | delimited!(char!('{'), ws4!(map!(
+  | tuple!(char!('['), ws_comm!(opt!(char!(' '))), char!(']')) => { |_| Expression::ListLiteral(vec![]) }
+  | tuple!(char!('{'), ws_comm!(opt!(char!(' '))), char!('}')) => { |_| Expression::DictLiteral(vec![]) }
+  | tuple!(char!('('), ws_comm!(opt!(char!(' '))), char!(')')) => { |_| Expression::TupleLiteral(vec![]) }
+  | delimited!(char!('{'), ws_comm!(map!(
       call!(ExpressionParser::<NewlinesAreSpaces>::dictorsetmaker), |e:Box<_>| *e
     )), char!('}'))
-  | map_opt!(ws3!(delimited!(char!('('), ws4!(
+  | map_opt!(ws_auto!(delimited!(char!('('), ws_comm!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(')'))),  |ret| {
       match ret {
@@ -276,10 +276,10 @@ named!(atom<StrSpan, Box<Expression>>,
           TestlistCompReturn::Single(SetItem::Star(_)) => None,
       }
     })
-  | delimited!(char!('('), ws4!(
+  | delimited!(char!('('), ws_comm!(
       call!(ExpressionParser::<NewlinesAreSpaces>::yield_expr)
     ), char!(')'))
-  | delimited!(char!('['), ws4!(
+  | delimited!(char!('['), ws_comm!(
       call!(ExpressionParser::<NewlinesAreSpaces>::testlist_comp)
     ), char!(']')) => { |ret| {
       match ret {
@@ -294,21 +294,21 @@ named!(atom<StrSpan, Box<Expression>>,
 // testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
 named!(testlist_comp<StrSpan, TestlistCompReturn>,
   do_parse!(
-    first: ws3!(alt!(
+    first: ws_auto!(alt!(
         call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
       | preceded!(char!('*'), call!(Self::expr)) => { |e: Box<_>| SetItem::Star(*e) }
       )) >>
     r: alt!(
       call!(Self::comp_for) => { |comp| TestlistCompReturn::Comp(Box::new(first), comp) }
     | opt!(delimited!(
-        ws3!(char!(',')),
-        separated_list!(ws3!(char!(',')),
+        ws_auto!(char!(',')),
+        separated_list!(ws_auto!(char!(',')),
           alt!(
             call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
           | preceded!(char!('*'), call!(Self::expr)) => { |e: Box<_>| SetItem::Star(*e) }
           )
         ),
-        ws3!(opt!(char!(',')))
+        ws_auto!(opt!(char!(',')))
       )) => { |v: Option<Vec<SetItem>>| {
         match v {
             Some(v) => {
@@ -327,11 +327,11 @@ named!(testlist_comp<StrSpan, TestlistCompReturn>,
 
 // subscript: test | [test] ':' [test] [sliceop]
 named!(subscript<StrSpan, Subscript>,
-  ws4!(alt!(
+  ws_comm!(alt!(
     preceded!(char!(':'), call!(Self::subscript_trail, None))
   | do_parse!(
       first: call!(Self::test) >>
-      r: opt!(ws4!(preceded!(char!(':'), call!(Self::subscript_trail, Some(*first.clone()))))) >> ( // FIXME: remove this clone
+      r: opt!(ws_comm!(preceded!(char!(':'), call!(Self::subscript_trail, Some(*first.clone()))))) >> ( // FIXME: remove this clone
         r.unwrap_or(Subscript::Simple(*first))
       )
     )
@@ -353,18 +353,18 @@ named_args!(subscript_trail(first: Option<Expression>) <StrSpan, Subscript>,
 
 // exprlist: (expr|star_expr) (',' (expr|star_expr))* [',']
 named!(pub exprlist<StrSpan, Vec<Expression>>,
-  separated_nonempty_list!(ws3!(char!(',')), map!(alt!(call!(Self::expr)|call!(Self::star_expr)), |e| *e))
+  separated_nonempty_list!(ws_auto!(char!(',')), map!(alt!(call!(Self::expr)|call!(Self::star_expr)), |e| *e))
 );
 
 // testlist: test (',' test)* [',']
 named!(pub testlist<StrSpan, Vec<Expression>>,
-  separated_nonempty_list!(ws3!(char!(',')), map!(call!(Self::test), |e| *e))
+  separated_nonempty_list!(ws_auto!(char!(',')), map!(call!(Self::test), |e| *e))
 );
 
 // FIXME: the code of this function is unreadable
 named!(pub possibly_empty_testlist<StrSpan, Vec<Expression>>,
   alt!(
-    tuple!(separated_nonempty_list!(ws3!(char!(',')), map!(call!(Self::test), |e:Box<_>| *e)), opt!(ws3!(char!(',')))) => { |(mut e, comma):(Vec<_>, _)|
+    tuple!(separated_nonempty_list!(ws_auto!(char!(',')), map!(call!(Self::test), |e:Box<_>| *e)), opt!(ws_auto!(char!(',')))) => { |(mut e, comma):(Vec<_>, _)|
       match (e.len(), comma) {
           (0, _) => unreachable!(),
           (1, Some(_)) => vec![Expression::TupleLiteral(vec![SetItem::Unique(e.remove(0))])], // The remove can't panic, because len == 1
@@ -389,7 +389,7 @@ impl ExpressionParser<NewlinesAreSpaces> {
 //                   ((test | star_expr)
 //                    (comp_for | (',' (test | star_expr))* [','])) )
 named!(dictorsetmaker<StrSpan, Box<Expression>>,
-  ws4!(alt!(
+  ws_comm!(alt!(
     do_parse!(
       tag!("**") >>
       e: map!(call!(Self::expr), |e: Box<_>| DictItem::Star(*e)) >>
@@ -421,7 +421,7 @@ named!(dictorsetmaker<StrSpan, Box<Expression>>,
 named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
   map!(
     opt!(alt!(
-      ws4!(delimited!(char!(','), separated_list!(char!(','), call!(Self::dictitem)), opt!(ws4!(char!(','))))) => { |v: Vec<_>| {
+      ws_comm!(delimited!(char!(','), separated_list!(char!(','), call!(Self::dictitem)), opt!(ws_comm!(char!(','))))) => { |v: Vec<_>| {
         let mut v = v;
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::DictLiteral(v))
@@ -442,7 +442,7 @@ named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
 named_args!(setmaker(item1: SetItem) <StrSpan, Box<Expression>>,
   do_parse!(
     rest:opt!(alt!(
-      ws4!(delimited!(char!(','), separated_list!(char!(','), call!(Self::setitem)), opt!(ws4!(char!(','))))) => { |v: Vec<_>| {
+      ws_comm!(delimited!(char!(','), separated_list!(char!(','), call!(Self::setitem)), opt!(ws_comm!(char!(','))))) => { |v: Vec<_>| {
         let mut v = v;
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::SetLiteral(v))
@@ -460,14 +460,14 @@ named_args!(setmaker(item1: SetItem) <StrSpan, Box<Expression>>,
 );
 
 named!(dictitem<StrSpan, DictItem>,
-  ws4!(alt!(
+  ws_comm!(alt!(
     preceded!(tag!("**"), call!(Self::expr)) => { |e:Box<_>| DictItem::Star(*e) }
   | tuple!(call!(Self::test), char!(':'), call!(Self::test)) => { |(e1,_,e2): (Box<_>,_,Box<_>)| DictItem::Unique(*e1,*e2) }
   ))
 );
 
 named!(setitem<StrSpan, SetItem>,
-  ws4!(alt!(
+  ws_comm!(alt!(
     preceded!(tag!("*"), call!(Self::expr)) => { |e:Box<_>| SetItem::Star(*e) }
   |call!(Self::test) => { |e:Box<_>| SetItem::Unique(*e) }
   ))
@@ -489,8 +489,8 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 //             '**' test |
 //             '*' test )
 named!(pub arglist<StrSpan, Vec<Argument>>,
-  ws4!(do_parse!(
-    args: separated_list!(ws4!(char!(',')),
+  ws_comm!(do_parse!(
+    args: separated_list!(ws_comm!(char!(',')),
       alt!(
         preceded!(tag!("**"), call!(Self::test)) => { |kwargs: Box<_>| Argument::Kwargs(*kwargs) }
       | preceded!(char!('*'), call!(Self::test)) => { |args: Box<_>| Argument::Starargs(*args) }
@@ -502,7 +502,7 @@ named!(pub arglist<StrSpan, Vec<Argument>>,
         )
       | do_parse!(
           test1: call!(Self::test) >>
-          next: opt!(ws4!(alt!(call!(Self::comp_for)))) >> (
+          next: opt!(ws_comm!(alt!(call!(Self::comp_for)))) >> (
             match next {
                 Some(e) => Argument::Positional(Expression::Generator(Box::new(SetItem::Unique(*test1)), e)),
                 None => Argument::Positional(*test1)
@@ -511,7 +511,7 @@ named!(pub arglist<StrSpan, Vec<Argument>>,
         )
       )
     ) >>
-    opt!(ws4!(char!(','))) >>
+    opt!(ws_comm!(char!(','))) >>
     (args)
   ))
 );
@@ -570,10 +570,10 @@ named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChu
 // yield_expr: 'yield' [yield_arg]
 // yield_arg: 'from' test | testlist
 named!(pub yield_expr<StrSpan, Expression>,
-  ws3!(preceded!(
+  ws_auto!(preceded!(
     keyword!("yield"),
-    ws3!(alt!(
-      preceded!(ws3!(keyword!("from")), call!(Self::test)) => { |e| Expression::YieldFrom(e) }
+    ws_auto!(alt!(
+      preceded!(ws_auto!(keyword!("from")), call!(Self::test)) => { |e| Expression::YieldFrom(e) }
     | call!(Self::testlist) => { |e| Expression::Yield(e) }
     | tag!("") => { |_| Expression::Yield(Vec::new()) }
     ))

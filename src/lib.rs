@@ -124,7 +124,7 @@ pub file_input <StrSpan, Vec<Statement>>,
 // eval_input: testlist NEWLINE* ENDMARKER
 named_attr!(#[doc = "Parses the input of eval()."],
 pub eval_input <StrSpan, Vec<Expression>>,
-  terminated!(ws2!(call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist)), many0!(newline))
+  terminated!(ws_nonl!(call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist)), many0!(newline))
 );
 
 // encoding_decl: NAME
