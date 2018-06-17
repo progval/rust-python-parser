@@ -3,6 +3,7 @@ use std::fmt::Debug;
 
 use unicode_xid::UnicodeXID;
 
+use nom::Slice;
 use nom::types::CompleteStr;
 use nom_locate::LocatedSpan;
 pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
@@ -58,9 +59,30 @@ named!(pub spaces<StrSpan, ()>,
   map!(many0!(alt!(one_of!(" \t\x0c") => { |_|() } | escaped_newline | newline)), |_| ())
 );
 
-named!(pub spaces2<StrSpan, ()>,
-  map!(many0!(alt!(one_of!(" \t\x0c") => { |_| () }|escaped_newline)), |_| ())
-);
+// Bottleneck:
+// named!(pub spaces2<StrSpan, ()>,
+//   map!(many0!(alt!(one_of!(" \t\x0c") => { |_| () }|escaped_newline)), |_| ())
+// );
+// Rewritten as:
+pub fn spaces2(i: StrSpan) -> Result<(StrSpan, ()), ::nom::Err<StrSpan>> {
+    let mut it = i.fragment.chars().enumerate().peekable();
+    while let Some((index, c)) = it.next() {
+        let next_char = it.peek().map(|(_,c)|*c);
+        match c {
+            ' ' | '\t' | '\x0c' => (),
+            '\\' if next_char.unwrap_or(' ') == '\n' => {it.next();},
+            _ => {
+                if index == 0 {
+                    return Ok((i, ()))
+                }
+                else {
+                    return Ok((i.slice(index..), ()))
+                }
+            },
+        }
+    }
+    Ok((i.slice(i.fragment.len()..), ()))
+}
 
 named!(pub space_sep<StrSpan, ()>,
   map!(many1!(alt!(one_of!(" \t\x0c") => { |_|() } | escaped_newline | newline)), |_| ())
