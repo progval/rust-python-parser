@@ -2,7 +2,7 @@
 name = "python-parser"
 version = "0.1.0"
 authors = ["Valentin Lorentz <progval+git@progval.net>"]
-license = "GPL-3.0-or-later"
+license = "GPL-3.0+"
 description = "A complete Python parser based on nom."
 documentation = "https://docs.rs/python-parser"
 repository = "https://github.com/ProgVal/rust-python-parser"
