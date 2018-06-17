@@ -9,7 +9,7 @@ extern crate nom_locate;
 extern crate pretty_assertions;
 
 extern crate unicode_xid;
-//extern crate unicode_names;
+extern crate unicode_names2;
 
 #[cfg(feature="bigint")]
 extern crate num_traits;

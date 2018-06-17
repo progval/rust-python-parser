@@ -631,6 +631,10 @@ mod tests {
         assert_parse_eq(atom(make_strspan(r#"'\x8a'"#)), Ok((make_strspan(""),
             Box::new(Expression::String(vec![new_pystring("", "\u{8a}")])))
         ));
+
+        assert_parse_eq(atom(make_strspan(r#"'\N{snowman}'"#)), Ok((make_strspan(""),
+            Box::new(Expression::String(vec![new_pystring("", "☃")])))
+        ));
     }
 
     #[test]
