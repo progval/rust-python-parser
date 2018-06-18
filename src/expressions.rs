@@ -32,9 +32,9 @@ named!(pub test<StrSpan, Box<Expression>>,
       left: call!(Self::or_test) >>
       right: opt!(do_parse!(
         ws_auto!(keyword!("if")) >>
-        cond: call!(Self::or_test) >>
+        cond: return_error!(call!(Self::or_test)) >>
         ws_auto!(keyword!("else")) >>
-        right: call!(Self::test) >> (
+        right: return_error!(call!(Self::test)) >> (
           (cond, right)
         )
       )) >> (
@@ -57,8 +57,7 @@ named!(test_nocond<StrSpan, Box<Expression>>,
 
 // lambdef: 'lambda' [varargslist] ':' test
 named!(lambdef<StrSpan, Box<Expression>>,
-  ws_auto!(do_parse!(
-    keyword!("lambda") >>
+  ws_auto!(preceded!(keyword!("lambda"), return_error!(do_parse!(
     args: opt!(varargslist) >>
     spaces!() >>
     char!(':') >>
@@ -66,19 +65,18 @@ named!(lambdef<StrSpan, Box<Expression>>,
     code: call!(Self::test) >> (
       Box::new(Expression::Lambdef(args.unwrap_or_default(), code))
     )
-  ))
+  ))))
 );
 
 // lambdef_nocond: 'lambda' [varargslist] ':' test_nocond
 named!(lambdef_nocond<StrSpan, Box<Expression>>,
-  do_parse!(
-    keyword!("lambda") >>
+  ws_auto!(preceded!(keyword!("lambda"), return_error!(do_parse!(
     args: opt!(varargslist) >>
     char!(':') >>
     code: call!(Self::test_nocond) >> (
       Box::new(Expression::Lambdef(args.unwrap_or_default(), code))
     )
-  )
+  ))))
 );
 
 } // End ExpressionParser
@@ -426,7 +424,7 @@ named_args!(dictmaker(item1: DictItem) <StrSpan, Box<Expression>>,
         v.insert(0, item1.clone()); // FIXME: do not clone
         Box::new(Expression::DictLiteral(v))
       }}
-    | preceded!(peek!(keyword!("for")), call!(Self::comp_for)) => { |comp| {
+    | preceded!(peek!(keyword!("for")), return_error!(call!(Self::comp_for))) => { |comp| {
         Box::new(Expression::DictComp(Box::new(item1.clone()), comp)) // FIXME: do not clone
       }}
     )),
@@ -529,7 +527,7 @@ named_args!(comp_iter(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionC
 );
 
 named_args!(opt_comp_iter(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChunk>>,
-  map!(opt!(call!(Self::comp_iter, acc.clone())), |r| r.unwrap_or(acc)) // FIXME: do not clone
+  return_error!(map!(opt!(call!(Self::comp_iter, acc.clone())), |r| r.unwrap_or(acc))) // FIXME: do not clone
 );
 
 // comp_for: [ASYNC] 'for' exprlist 'in' or_test [comp_iter]
@@ -541,11 +539,11 @@ named_args!(comp_for2(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionC
     async: map!(opt!(terminated!(tag!("async"), space_sep!())), |o| o.is_some()) >>
     keyword!("for") >>
     spaces!() >>
-    item: call!(Self::exprlist) >>
+    item: return_error!(call!(Self::exprlist)) >>
     spaces!() >>
     keyword!("in") >>
     spaces!() >>
-    iterator: map!(call!(Self::or_test), |e| *e) >>
+    iterator: return_error!(map!(call!(Self::or_test), |e| *e)) >>
     spaces!() >>
     r: call!(Self::opt_comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::For { async, item, iterator }); acc }) >> (
       r
@@ -558,7 +556,7 @@ named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChu
   do_parse!(
     keyword!("if") >>
     spaces!() >>
-    cond: map!(call!(Self::test_nocond), |e| *e) >>
+    cond: return_error!(map!(call!(Self::test_nocond), |e| *e)) >>
     spaces!() >>
     r: call!(Self::opt_comp_iter, { let mut acc = acc; acc.push(ComprehensionChunk::If { cond }); acc }) >> (
       r

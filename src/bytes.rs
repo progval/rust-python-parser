@@ -96,16 +96,16 @@ named!(pub bytes<StrSpan, Vec<u8>>,
     is_raw: call!(|i, s:StrSpan| Ok((i, s.fragment.0.contains('r') || s.fragment.0.contains('R'))), prefix) >>
     content: switch!(call!(|i| Ok((i, is_raw))),
       false => alt!(
-        delimited!(tag!("'''"), call!(longbytes, '\''), tag!("'''"))
-      | delimited!(tag!("\"\"\""), call!(longbytes, '"'), tag!("\"\"\""))
-      | delimited!(char!('\''), call!(shortbytes, '\''), char!('\''))
-      | delimited!(char!('"'), call!(shortbytes, '"'), char!('"'))
+        delimited!(tag!("'''"), return_error!(call!(longbytes, '\'')), tag!("'''"))
+      | delimited!(tag!("\"\"\""), return_error!(call!(longbytes, '"')), tag!("\"\"\""))
+      | delimited!(char!('\''), return_error!(call!(shortbytes, '\'')), char!('\''))
+      | delimited!(char!('"'), return_error!(call!(shortbytes, '"')), char!('"'))
       )
     | true => alt!(
-        delimited!(tag!("'''"), call!(longrawbytes, '\''), tag!("'''"))
-      | delimited!(tag!("\"\"\""), call!(longrawbytes, '"'), tag!("\"\"\""))
-      | delimited!(char!('\''), call!(shortrawbytes, '\''), char!('\''))
-      | delimited!(char!('"'), call!(shortrawbytes, '"'), char!('"'))
+        delimited!(tag!("'''"), return_error!(call!(longrawbytes, '\'')), tag!("'''"))
+      | delimited!(tag!("\"\"\""), return_error!(call!(longrawbytes, '"')), tag!("\"\"\""))
+      | delimited!(char!('\''), return_error!(call!(shortrawbytes, '\'')), char!('\''))
+      | delimited!(char!('"'), return_error!(call!(shortrawbytes, '"')), char!('"'))
       )
     ) >> (content)
   )

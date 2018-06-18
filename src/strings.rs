@@ -133,16 +133,16 @@ named!(pub string<StrSpan, PyString>,
     is_raw: call!(|i, s:StrSpan| Ok((i, s.fragment.0.contains('r') || s.fragment.0.contains('R'))), prefix) >>
     content: switch!(call!(|i| Ok((i, is_raw))),
       false => alt!(
-        delimited!(tag!("'''"), call!(longstring, '\''), tag!("'''"))
-      | delimited!(tag!("\"\"\""), call!(longstring, '"'), tag!("\"\"\""))
-      | delimited!(char!('\''), call!(shortstring, '\''), char!('\''))
-      | delimited!(char!('"'), call!(shortstring, '"'), char!('"'))
+        delimited!(tag!("'''"), return_error!(call!(longstring, '\'')), tag!("'''"))
+      | delimited!(tag!("\"\"\""), return_error!(call!(longstring, '"')), tag!("\"\"\""))
+      | delimited!(char!('\''), return_error!(call!(shortstring, '\'')), char!('\''))
+      | delimited!(char!('"'), return_error!(call!(shortstring, '"')), char!('"'))
       )
     | true => alt!(
-        delimited!(tag!("'''"), call!(longrawstring, '\''), tag!("'''"))
-      | delimited!(tag!("\"\"\""), call!(longrawstring, '"'), tag!("\"\"\""))
-      | delimited!(char!('\''), call!(shortrawstring, '\''), char!('\''))
-      | delimited!(char!('"'), call!(shortrawstring, '"'), char!('"'))
+        delimited!(tag!("'''"), return_error!(call!(longrawstring, '\'')), tag!("'''"))
+      | delimited!(tag!("\"\"\""), return_error!(call!(longrawstring, '"')), tag!("\"\"\""))
+      | delimited!(char!('\''), return_error!(call!(shortrawstring, '\'')), char!('\''))
+      | delimited!(char!('"'), return_error!(call!(shortrawstring, '"')), char!('"'))
       )
     ) >> (PyString { prefix: prefix.to_string(), content: content })
   )

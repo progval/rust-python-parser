@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use errors::PyParseError;
 use helpers::*;
 use expressions::ExpressionParser;
 use functions::decorated;
@@ -18,16 +19,18 @@ macro_rules! call_test {
 named_args!(pub statement(indent: usize) <StrSpan, Vec<Statement>>,
   alt!(
     call!(compound_stmt, indent) => { |stmt| vec![Statement::Compound(Box::new(stmt))] }
-  | preceded!(count!(char!(' '), indent), call!(simple_stmt))
+  | preceded!(indent!(indent), call!(simple_stmt))
   )
 );
 
 // simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 named_args!(simple_stmt() <StrSpan, Vec<Statement>>,
-  do_parse!(
-    stmts: separated_nonempty_list!(ws_nonl!(semicolon), call!(small_stmt)) >>
-    opt!(semicolon) >> (
-      stmts
+  return_error!(
+    do_parse!(
+      stmts: separated_nonempty_list!(ws_nonl!(semicolon), call!(small_stmt)) >>
+      opt!(semicolon) >> (
+        stmts
+      )
     )
   )
 );
@@ -36,13 +39,16 @@ named_args!(simple_stmt() <StrSpan, Vec<Statement>>,
 //             import_stmt | global_stmt | nonlocal_stmt | assert_stmt)
 named!(small_stmt<StrSpan, Statement>,
   alt!(
-    del_stmt
-  | pass_stmt
+    switch!(peek!(ws_nonl!(first_word)),
+      "del" => return_error!(del_stmt)
+    | "pass" => return_error!(pass_stmt)
+    | "import" => return_error!(import_stmt)
+    | "from" => return_error!(import_stmt)
+    | "global" => return_error!(global_stmt)
+    | "nonlocal" => return_error!(nonlocal_stmt)
+    | "assert" => return_error!(assert_stmt)
+    )
   | flow_stmt
-  | import_stmt
-  | global_stmt
-  | nonlocal_stmt
-  | assert_stmt
   | expr_stmt
   )
 );
@@ -161,7 +167,7 @@ named!(flow_stmt<StrSpan, Statement>,
   | keyword!("continue") => { |_| Statement::Continue }
   | preceded!(
       tuple!(keyword!("return"), spaces_nonl),
-      ws_nonl!(call!(ExpressionParser::<NewlinesAreNotSpaces>::possibly_empty_testlist))
+      return_error!(ws_nonl!(call!(ExpressionParser::<NewlinesAreNotSpaces>::possibly_empty_testlist)))
     ) => { |e| Statement::Return(e) }
   | raise_stmt
   | call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr)
@@ -174,10 +180,10 @@ named!(raise_stmt<StrSpan, Statement>,
   do_parse!(
     keyword!("raise") >>
     spaces_nonl >>
-    t: opt!(tuple!(
+    t: return_error!(opt!(tuple!(
       call_test!(),
       opt!(preceded!(ws_nonl!(keyword!("from")), call_test!()))
-    )) >> (
+    ))) >> (
       match t {
         Some((exc, Some(from_exc))) => Statement::RaiseExcFrom(*exc, *from_exc),
         Some((exc, None)) => Statement::RaiseExc(*exc),
@@ -329,15 +335,20 @@ named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
   alt!(
     do_parse!(
       new_indent: peek!(
-        do_parse!(
-          newline >>
-          count!(char!(' '), indent) >>
-          new_spaces: many1!(char!(' ')) >> ({
-            indent + new_spaces.len()
-          })
+        preceded!(
+          newline,
+          return_error!(
+            ErrorKind::Custom(PyParseError::ExpectedIndent.into()),
+            do_parse!(
+              count!(char!(' '), indent) >>
+              new_spaces: many1!(char!(' ')) >> ({
+                indent + new_spaces.len()
+              })
+            )
+          )
         )
       ) >>
-      stmts: fold_many1!(
+      stmts: fold_many1_fixed!(
         do_parse!(
           newline >>
           r: call!(statement, new_indent) >>
@@ -352,34 +363,34 @@ named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
   )
 );
 named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)>,
-  do_parse!(
+  return_error!(do_parse!(
     spaces_nonl >>
     cond: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
     ws_nonl!(char!(':')) >>
     block: call!(block, indent) >> (
       (*cond, block)
     )
-  )
+  ))
 );
 
 
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
-  switch!(map!(peek!(ws_nonl!(take!(1))), |s| s.fragment.0),
-    "i" => call!(if_stmt, indent)
-  | "f" => call!(for_stmt, indent)
-  | "w" => alt!(
-      call!(while_stmt, indent)
-    | call!(with_stmt, indent)
+  alt!(
+    switch!(peek!(ws_nonl!(first_word)),
+      "if" => return_error!(call!(if_stmt, indent))
+    | "for" => return_error!(call!(for_stmt, indent))
+    | "while" => return_error!(call!(while_stmt, indent))
+    | "with" => return_error!(call!(with_stmt, indent))
+    | "try" => return_error!(call!(try_stmt, indent))
+    | "def" => return_error!(call!(decorated, indent))
+    | "class" => return_error!(call!(decorated, indent))
+    | "async" => return_error!(alt!(
+        call!(decorated, indent) // ASYNC funcdef
+      | call!(for_stmt, indent)
+      ))
     )
-  | "t" => call!(try_stmt, indent)
-  | "d" => call!(decorated, indent)
-  | "c" => call!(decorated, indent)
-  | "a" => alt!(
-      call!(decorated, indent) // ASYNC funcdef
-    | call!(for_stmt, indent)
-    )
-  | "@" => call!(decorated, indent)
+  | call!(decorated, indent)
   )
 );
 
@@ -389,7 +400,7 @@ named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
 named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
   opt!(
     preceded!(
-      tuple!(newline, count!(char!(' '), indent), tag!("else"), ws_nonl!(char!(':'))),
+      tuple!(newline, indent!(indent), tag!("else"), ws_nonl!(char!(':'))),
       call!(block, indent)
     )
   )
@@ -398,12 +409,12 @@ named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
 // if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
 named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
-    count!(char!(' '), indent) >>
+    indent!(indent) >>
     keyword!("if") >>
     if_block: call!(cond_and_block, indent) >>
     elif_blocks: many0!(
       preceded!(
-        tuple!(newline, count!(char!(' '), indent), keyword!("elif")),
+        tuple!(newline, indent!(indent), keyword!("elif")),
         call!(cond_and_block, indent)
       )
     ) >>
@@ -418,7 +429,7 @@ named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // while_stmt: 'while' test ':' suite ['else' ':' suite]
 named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
-    count!(char!(' '), indent) >>
+    indent!(indent) >>
     keyword!("while") >>
     while_block: call!(cond_and_block, indent) >>
     else_block: call!(else_block, indent) >> ({
@@ -431,7 +442,7 @@ named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
 named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
-    count!(char!(' '), indent) >>
+    indent!(indent) >>
     async: opt!(tuple!(tag!("async"), space_sep_nonl)) >>
     keyword!("for") >>
     spaces_nonl >>
@@ -458,13 +469,13 @@ named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // except_clause: 'except' [test ['as' NAME]]
 named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
-    count!(char!(' '), indent) >>
+    indent!(indent) >>
     tag!("try") >>
     ws_nonl!(char!(':')) >>
     try_block: call!(block, indent) >>
     except_clauses: many0!(do_parse!(
       newline >>
-      count!(char!(' '), indent) >> 
+      indent!(indent) >> 
       keyword!("except") >>
       spaces_nonl >>
       catch_what: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
@@ -477,7 +488,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
     )) >>
     last_except: opt!(do_parse!( 
       newline >>
-      count!(char!(' '), indent) >>
+      indent!(indent) >>
       tag!("except") >>
       ws_nonl!(char!(':')) >>
       r: call!(block, indent) >>
@@ -485,7 +496,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
     )) >>
     else_block: opt!(do_parse!( 
       newline >>
-      count!(char!(' '), indent) >>
+      indent!(indent) >>
       tag!("else") >>
       ws_nonl!(char!(':')) >>
       r: call!(block, indent) >>
@@ -493,7 +504,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
     )) >>
     finally_block: opt!(do_parse!( 
       newline >>
-      count!(char!(' '), indent) >>
+      indent!(indent) >>
       tag!("finally") >>
       ws_nonl!(char!(':')) >>
       r: call!(block, indent) >>
@@ -513,7 +524,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
 // with_item: test ['as' expr]
 named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
-    count!(char!(' '), indent) >>
+    indent!(indent) >>
     keyword!("with") >>
     spaces_nonl >>
     contexts: separated_nonempty_list!(ws_nonl!(char!(',')), do_parse!(
@@ -567,7 +578,29 @@ mod tests {
         assert_parse_eq(block(make_strspan("\n  del foo\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("foo".to_string())])])));
         assert_parse_eq(block(make_strspan("\n      del foo\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("foo".to_string())])])));
         assert_parse_eq(block(make_strspan("\n del foo\ndel foo"), 0), Ok((make_strspan("\ndel foo"), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
-        assert_parse_eq(block(make_strspan("\n del foo\n  del foo"), 0), Ok((make_strspan("\n  del foo"), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+    }
+    
+    #[test]
+    fn test_unexpected_indent() {
+        use errors::PyParseError;
+
+        assert_eq!(statement(make_strspan(" del foo"), 0),
+            Err(::nom::Err::Failure(::nom::Context::Code(
+                ::nom_locate::LocatedSpan { line: 1, offset: 0,
+                    fragment: ::nom::types::CompleteStr(" del foo")
+                },
+                ::nom::ErrorKind::Custom(PyParseError::UnexpectedIndent.into())
+            )))
+        );
+
+        assert_eq!(block(make_strspan("\n del foo\n  del foo"), 0),
+            Err(::nom::Err::Failure(::nom::Context::Code(
+                ::nom_locate::LocatedSpan { line: 3, offset: 11,
+                    fragment: ::nom::types::CompleteStr(" del foo")
+                },
+                ::nom::ErrorKind::Custom(PyParseError::UnexpectedIndent.into())
+            )))
+        );
     }
 
     #[test]

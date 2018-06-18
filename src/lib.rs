@@ -91,6 +91,7 @@ mod bytes;
 mod numbers;
 pub mod ast;
 pub mod visitors;
+pub mod errors;
 
 use helpers::*;
 use statements::*;
@@ -113,8 +114,9 @@ named_attr!(#[doc = "Parses a module or sequence of commands."],
 pub file_input <StrSpan, Vec<Statement>>,
   fold_many0!(
     alt!(
-      call!(statement, 0) => { |s| Some(s) }
-    | newline => { |_| None }
+      newline => { |_| None }
+    | eof!() => { |_| None }
+    | call!(statement, 0) => { |s| Some(s) }
     ),
     Vec::new(),
     |acc: Vec<_>, item| { let mut acc = acc; if let Some(s) = item { acc.extend(s); } acc }

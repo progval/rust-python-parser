@@ -205,3 +205,82 @@ pub(crate) fn first_word(i: StrSpan) -> Result<(StrSpan, &str), ::nom::Err<StrSp
         Err(e) => Err(e),
     }
 }
+
+// https://github.com/Geal/nom/pull/800
+macro_rules! fold_many1_fixed(
+  ($i:expr, $submac:ident!( $($args:tt)* ), $init:expr, $f:expr) => (
+    {
+      use nom;
+      use nom::lib::std::result::Result::*;
+      use nom::{Err,Needed,InputLength,Context,AtEof};
+
+      match $submac!($i, $($args)*) {
+        Err(Err::Error(_))      => Err(Err::Error(
+          error_position!($i, nom::ErrorKind::Many1)
+        )),
+        Err(Err::Failure(_))      => Err(Err::Failure(
+          error_position!($i, nom::ErrorKind::Many1)
+        )),
+        Err(Err::Incomplete(i)) => Err(Err::Incomplete(i)),
+        Ok((i1,o1))   => {
+          let f = $f;
+          let mut acc = f($init, o1);
+          let mut input  = i1;
+          let mut incomplete: nom::lib::std::option::Option<Needed> =
+            nom::lib::std::option::Option::None;
+          let mut failure: nom::lib::std::option::Option<Context<_,_>> =
+            nom::lib::std::option::Option::None;
+          loop {
+            match $submac!(input, $($args)*) {
+              Err(Err::Error(_))                    => {
+                break;
+              },
+              Err(Err::Incomplete(i)) => {
+                incomplete = nom::lib::std::option::Option::Some(i);
+                break;
+              },
+              Err(Err::Failure(e)) => {
+                failure = nom::lib::std::option::Option::Some(e);
+                break;
+              },
+              Ok((i, o)) => {
+                if i.input_len() == input.input_len() {
+                  if !i.at_eof() {
+                    failure = nom::lib::std::option::Option::Some(error_position!(i, nom::ErrorKind::Many1));
+                  }
+                  break;
+                }
+                acc = f(acc, o);
+                input = i;
+              }
+            }
+          }
+
+          match failure {
+            nom::lib::std::option::Option::Some(e) => Err(Err::Failure(e)),
+            nom::lib::std::option::Option::None    => match incomplete {
+              nom::lib::std::option::Option::Some(i) => nom::need_more($i, i),
+              nom::lib::std::option::Option::None    => Ok((input, acc))
+            }
+          }
+        }
+      }
+    }
+  );
+  ($i:expr, $f:expr, $init:expr, $fold_f:expr) => (
+    fold_many_fixed1!($i, call!($f), $init, $fold_f);
+  );
+);
+
+macro_rules! indent {
+    ($i:expr, $nb_spaces:expr) => {{
+        use nom::ErrorKind;
+        use $crate::errors::PyParseError;
+        count!($i, char!(' '), $nb_spaces).and_then(|(i2,_)|
+            return_error!(i2,
+                ErrorKind::Custom(PyParseError::UnexpectedIndent.into()),
+                not!(peek!(char!(' ')))
+            )
+        )
+    }}
+}

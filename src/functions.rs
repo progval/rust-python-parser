@@ -14,7 +14,7 @@ use ast::*;
 // decorator: '@' dotted_name [ '(' [arglist] ')' ] NEWLINE
 named_args!(decorator(indent: usize) <StrSpan, Decorator>,
   do_parse!(
-    count!(char!(' '), indent) >>
+    indent!(indent) >>
     char!('@') >>
     name: ws_nonl!(call!(ImportParser::<NewlinesAreNotSpaces>::dotted_name)) >>
     args: opt!(ws_nonl!(delimited!(char!('('), ws_comm!(call!(ExpressionParser::<NewlinesAreSpaces>::arglist)), char!(')')))) >>
@@ -49,7 +49,7 @@ named_args!(pub decorated(indent: usize) <StrSpan, CompoundStatement>,
 // funcdef: 'def' NAME parameters ['->' test] ':' suite
 named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, CompoundStatement>,
   do_parse!(
-    count!(char!(' '), indent) >>
+    indent!(indent) >>
     async: opt!(tuple!(tag!("async"), space_sep_nonl)) >>
     tag!("def") >>
     space_sep_nonl >>
@@ -68,7 +68,7 @@ named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, Compoun
 // classdef: 'class' NAME ['(' [arglist] ')'] ':' suite
 named_args!(classdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, CompoundStatement>,
   do_parse!(
-    count!(char!(' '), indent) >>
+    indent!(indent) >>
     tag!("class") >>
     space_sep_nonl >>
     name: name >>
