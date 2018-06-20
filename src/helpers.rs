@@ -65,7 +65,7 @@ named!(pub spaces_nl<StrSpan, ()>,
 pub fn spaces_nonl(i: StrSpan) -> Result<(StrSpan, ()), ::nom::Err<StrSpan>> {
     let mut it = i.fragment.chars().enumerate().peekable();
     while let Some((index, c)) = it.next() {
-        let next_char = it.peek().map(|(_,c)|*c);
+        let next_char = it.peek().map(|&(_,c)|c);
         match c {
             ' ' | '\t' | '\x0c' => (),
             '\\' if next_char.unwrap_or(' ') == '\n' => {it.next();},

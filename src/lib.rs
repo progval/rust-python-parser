@@ -22,7 +22,6 @@
 //! # Example
 //!
 //! ```
-//! extern crate python_parser;
 //! use python_parser::ast::*;
 //! let code = "print(2 + 3, fd=sys.stderr)";
 //! let ast = python_parser::file_input(python_parser::make_strspan(code))

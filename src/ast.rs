@@ -99,7 +99,7 @@ pub enum Uop {
 
 impl fmt::Display for Uop {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", match self {
+        write!(f, "{}", match *self {
             Uop::Plus => "+",
             Uop::Minus => "-",
             Uop::Invert => "~",
@@ -144,7 +144,7 @@ pub enum Bop {
 
 impl fmt::Display for Bop {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", match self {
+        write!(f, "{}", match *self {
             Bop::Add => "+",
             Bop::Sub => "-",
             Bop::Mult => "*",
@@ -290,7 +290,7 @@ pub enum AugAssignOp {
 
 impl fmt::Display for AugAssignOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", match self {
+        write!(f, "{}", match *self {
             AugAssignOp::Add => "+=",
             AugAssignOp::Sub => "-=",
             AugAssignOp::Mult => "*=",

@@ -91,7 +91,7 @@ fn format_statement(indent: usize, stmt: &Statement) -> String {
         Statement::Assert(ref expr, ref msg) => {
             s.push_str("assert ");
             s.push_str(&format_expr(expr));
-            if let Some(msg) = msg {
+            if let &Some(ref msg) = msg {
                 s.push_str(", ");
                 s.push_str(&format_expr(msg));
             }
@@ -131,11 +131,11 @@ fn format_statement(indent: usize, stmt: &Statement) -> String {
 }
 
 fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String {
-    match stmt {
+    match *stmt {
         CompoundStatement::If(ref cond_blocks, ref else_block) => {
             let mut s = String::new();
             let mut first = true;
-            for (ref cond, ref block) in cond_blocks {
+            for &(ref cond, ref block) in cond_blocks {
                 if first {
                     s.push_str("if ");
                     s.push_str(&format_expr(cond));
@@ -151,7 +151,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
                     s.push_str(&format_block(indent+4, block));
                 }
             }
-            if let Some(block) = else_block {
+            if let &Some(ref block) = else_block {
                 push_indent(indent, &mut s);
                 s.push_str("else:\n");
                 s.push_str(&format_block(indent+4, block));
@@ -160,7 +160,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
         },
         CompoundStatement::For { async, ref item, ref iterator, ref for_block, ref else_block } => {
             let mut s = String::new();
-            if *async {
+            if async {
                 s.push_str("async ");
             }
             s.push_str("for ");
@@ -170,7 +170,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
             s.push_str(":\n");
             s.push_str(&format_block(indent+4, for_block));
 
-            if let Some(block) = else_block {
+            if let &Some(ref block) = else_block {
                 push_indent(indent, &mut s);
                 s.push_str("else:\n");
                 s.push_str(&format_block(indent+4, block));
@@ -184,7 +184,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
             s.push_str(":\n");
             s.push_str(&format_block(indent+4, block));
 
-            if let Some(block) = else_block {
+            if let &Some(ref block) = else_block {
                 push_indent(indent, &mut s);
                 s.push_str("else:\n");
                 s.push_str(&format_block(indent+4, block));
@@ -197,11 +197,11 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
             s.push_str("try:\n");
             s.push_str(&format_block(indent+4, try_block));
 
-            for (ref guard, ref name, ref block) in except_clauses {
+            for &(ref guard, ref name, ref block) in except_clauses {
                 push_indent(indent, &mut s);
                 s.push_str("except ");
                 s.push_str(&format_expr(guard));
-                if let Some(name) = name {
+                if let &Some(ref name) = name {
                     s.push_str(" as ");
                     s.push_str(name);
                 }
@@ -231,7 +231,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
             s.push_str("with ");
             assert!(contexts.len() > 0);
             let mut first = true;
-            for (ctx, as_what) in contexts {
+            for &(ref ctx, ref as_what) in contexts {
                 if first {
                     first = false;
                 }
@@ -239,7 +239,7 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
                     s.push_str(", ");
                 }
                 s.push_str(&format_expr(ctx));
-                if let Some(ref e) = as_what {
+                if let &Some(ref e) = as_what {
                     s.push_str(" as ");
                     s.push_str(&format_expr(e));
                 }
@@ -255,11 +255,11 @@ fn format_compound_statement(indent: usize, stmt: &CompoundStatement) -> String 
 
 fn format_decorators(indent: usize, decorators: &Vec<Decorator>) -> String {
     let mut s = String::new();
-    for Decorator { ref name, ref args } in decorators {
+    for &Decorator { ref name, ref args } in decorators {
         push_indent(indent, &mut s);
         s.push_str("@");
         s.push_str(&dot_join(name));
-        if let Some(ref arglist) = args {
+        if let &Some(ref arglist) = args {
             s.push_str("(");
             s.push_str(&format_args(arglist));
             s.push_str(")");
@@ -270,11 +270,11 @@ fn format_decorators(indent: usize, decorators: &Vec<Decorator>) -> String {
 }
 
 fn format_funcdef(indent: usize, funcdef: &Funcdef) -> String {
-    let Funcdef { async, ref decorators, ref name, ref parameters, ref return_type, ref code } = funcdef;
+    let &Funcdef { async, ref decorators, ref name, ref parameters, ref return_type, ref code } = funcdef;
     let mut s = "\n".to_string();
     s.push_str(&format_decorators(indent, decorators));
     push_indent(indent, &mut s);
-    if *async {
+    if async {
         s.push_str("async ");
     }
     s.push_str("def ");
@@ -282,7 +282,7 @@ fn format_funcdef(indent: usize, funcdef: &Funcdef) -> String {
     s.push_str("(");
     s.push_str(&format_typed_params(parameters));
     s.push_str(")");
-    if let Some(ref ret) = return_type {
+    if let &Some(ref ret) = return_type {
         s.push_str(" -> ");
         s.push_str(&format_expr(ret));
     }
@@ -293,7 +293,7 @@ fn format_funcdef(indent: usize, funcdef: &Funcdef) -> String {
 }
 
 fn format_classdef(indent: usize, classdef: &Classdef) -> String {
-    let Classdef { ref decorators, ref name, ref arguments, ref code } = classdef;
+    let &Classdef { ref decorators, ref name, ref arguments, ref code } = classdef;
     let mut s = "\n".to_string();
     s.push_str(&format_decorators(indent, decorators));
     push_indent(indent, &mut s);
@@ -317,14 +317,14 @@ fn format_block(indent: usize, stmts: &Vec<Statement>) -> String {
 }
 
 fn format_dictitem(si: &DictItem) -> String {
-    match si {
+    match *si {
         DictItem::Unique(ref e1, ref e2) => format!("{}:{}", format_expr(e1), format_expr(e2)),
         DictItem::Star(ref e) => format!("**{}", format_expr(e)),
     }
 }
 
 fn format_setitem(si: &SetItem) -> String {
-    match si {
+    match *si {
         SetItem::Unique(ref e) => format_expr(e),
         SetItem::Star(ref e) => format!("*{}", format_expr(e)),
     }
@@ -332,7 +332,7 @@ fn format_setitem(si: &SetItem) -> String {
 
 fn format_args(args: &Vec<Argument>) -> String {
     let mut s = String::new();
-    s.push_str(&comma_join(args.iter().map(|ref arg| match arg {
+    s.push_str(&comma_join(args.iter().map(|arg| match *arg {
         Argument::Positional(ref e) => format_expr(e),
         Argument::Starargs(ref e) => format!("*{}", format_expr(e)),
         Argument::Keyword(ref n, ref e) => format!("{}={}", n, format_expr(e)),
@@ -347,7 +347,7 @@ fn format_typed_params(param: &TypedArgsList) -> String {
 
     chunks.extend(positional_args.iter().map(format_typed_param));
 
-    match star_args {
+    match *star_args {
         StarParams::No => (),
         StarParams::Anonymous => chunks.push("*".to_string()),
         StarParams::Named((ref name, None)) => chunks.push(format!("*{}", name)),
@@ -357,8 +357,8 @@ fn format_typed_params(param: &TypedArgsList) -> String {
 
     chunks.extend(keyword_args.iter().map(format_typed_param));
 
-    if let Some((name, typed)) = star_kwargs {
-        if let Some(typed) = typed {
+    if let &Some((ref name, ref typed)) = star_kwargs {
+        if let &Some(ref typed) = typed {
             chunks.push(format!("**{}:{}", name, format_expr(typed)))
         }
         else {
@@ -370,13 +370,13 @@ fn format_typed_params(param: &TypedArgsList) -> String {
 }
 
 fn format_typed_param(param: &(Name, Option<Expression>, Option<Expression>)) -> String {
-    let (name, typed, value) = param;
+    let &(ref name, ref typed, ref value) = param;
     let mut s = name.to_string();
-    if let Some(ref typed) = typed {
+    if let &Some(ref typed) = typed {
         s.push_str(":");
         s.push_str(&format_expr(typed));
     }
-    if let Some(ref value) = value {
+    if let &Some(ref value) = value {
         s.push_str("=");
         s.push_str(&format_expr(value));
     }
@@ -390,7 +390,7 @@ fn format_untyped_params(param: &UntypedArgsList) -> String {
 
     chunks.extend(positional_args.iter().map(format_untyped_param));
 
-    match star_args {
+    match *star_args {
         StarParams::No => (),
         StarParams::Anonymous => chunks.push("*".to_string()),
         StarParams::Named(ref name) => {
@@ -400,7 +400,7 @@ fn format_untyped_params(param: &UntypedArgsList) -> String {
 
     chunks.extend(keyword_args.iter().map(format_untyped_param));
 
-    if let Some(name) = star_kwargs {
+    if let &Some(ref name) = star_kwargs {
         chunks.push(format!("**{}", name));
     }
 
@@ -408,9 +408,9 @@ fn format_untyped_params(param: &UntypedArgsList) -> String {
 }
 
 fn format_untyped_param(param: &(Name, Option<Expression>)) -> String {
-    let (name, value) = param;
+    let &(ref name, ref value) = param;
     let mut s = name.to_string();
-    if let Some(ref value) = value {
+    if let &Some(ref value) = value {
         s.push_str("=");
         s.push_str(&format_expr(value));
     }
@@ -453,7 +453,7 @@ fn format_float(n: f64) -> String {
 
 #[cfg(feature="wtf8")]
 fn format_string(v: &Vec<PyString>) -> String {
-    space_join(v.iter().map(|PyString { prefix, content }|
+    space_join(v.iter().map(|&PyString { ref prefix, ref content }|
         format!("{}\"{}\"", prefix.to_ascii_lowercase().replace("r", ""), content.code_points().map(|c| match c.to_u32() {
             0xd => "\\r".to_string(),
             0xa => "\\n".to_string(),
@@ -471,7 +471,7 @@ fn format_string(v: &Vec<PyString>) -> String {
 
 #[cfg(not(feature="wtf8"))]
 fn format_string(v: &Vec<PyString>) -> String {
-    space_join(v.iter().map(|PyString { prefix, content }|
+    space_join(v.iter().map(|&PyString { ref prefix, ref content }|
         format!("{}\"{}\"", prefix.to_ascii_lowercase().replace("r", ""), content.chars().map(|c| match c {
             '\r' => "\\r".to_string(),
             '\n' => "\\n".to_string(),
@@ -489,7 +489,7 @@ fn format_string(v: &Vec<PyString>) -> String {
 
 
 fn format_expr(e: &Expression) -> String {
-    match e {
+    match *e {
         Expression::Ellipsis => "...".to_string(),
         Expression::None => "None".to_string(),
         Expression::True => "True".to_string(),
@@ -501,7 +501,7 @@ fn format_expr(e: &Expression) -> String {
         Expression::ImaginaryFloat(ref n) => format!("{}j", format_float(*n)),
         Expression::String(ref v) => format_string(v),
         Expression::Bytes(ref content) => {
-            format!("b\"{}\"", content.iter().map(|b| match b {
+            format!("b\"{}\"", content.iter().map(|b| match *b {
                 b'\r' => "\\r".to_string(),
                 b'\n' => "\\n".to_string(),
                 b'\t' => "\\t".to_string(),
@@ -527,16 +527,16 @@ fn format_expr(e: &Expression) -> String {
             }
         },
 
-        Expression::DictComp(e, ref comp) =>
+        Expression::DictComp(ref e, ref comp) =>
             format!("{{{} {}}}", format_dictitem(e), space_join(comp.iter().map(format_comp))),
-        Expression::SetComp(e, ref comp) =>
+        Expression::SetComp(ref e, ref comp) =>
             format!("{{{} {}}}", format_setitem(e), space_join(comp.iter().map(format_comp))),
-        Expression::ListComp(e, ref comp) =>
+        Expression::ListComp(ref e, ref comp) =>
             format!("[{} {}]", format_setitem(e), space_join(comp.iter().map(format_comp))),
-        Expression::Generator(e, ref comp) =>
+        Expression::Generator(ref e, ref comp) =>
             format!("({} {})", format_setitem(e), space_join(comp.iter().map(format_comp))),
 
-        Expression::Call(e, ref args) => {
+        Expression::Call(ref e, ref args) => {
             match **e {
                 Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
                 Expression::ListComp(_, _) | Expression::Generator(_, _) |
@@ -547,9 +547,9 @@ fn format_expr(e: &Expression) -> String {
                 _ => format!("({})({})", format_expr(e), format_args(args)),
             }
         },
-        Expression::Subscript(e, ref sub) =>
+        Expression::Subscript(ref e, ref sub) =>
             format!("({})[{}]", format_expr(e), comma_join(sub.iter().map(format_subscript))),
-        Expression::Attribute(e, ref n) => {
+        Expression::Attribute(ref e, ref n) => {
             match **e {
                 Expression::Name(_) | Expression::DictComp(_, _) | Expression::SetComp(_, _) |
                 Expression::ListComp(_, _) | Expression::Generator(_, _) |
@@ -583,7 +583,7 @@ fn format_expr(e: &Expression) -> String {
             s.push_str("(");
             s.push_str(&format_expr(first));
             s.push_str(")");
-            for (op, e) in rest {
+            for &(op, ref e) in rest {
                 s.push_str(" ");
                 s.push_str(&op.to_string());
                 s.push_str(" (");
@@ -592,7 +592,7 @@ fn format_expr(e: &Expression) -> String {
             }
             s
         },
-        Expression::Ternary(e1, e2, e3) =>
+        Expression::Ternary(ref e1, ref e2, ref e3) =>
             format!("({}) if ({}) else ({})", format_expr(e1), format_expr(e2), format_expr(e3)),
         Expression::Star(ref e) =>
             format!("*{}", format_expr(e)),
@@ -632,10 +632,10 @@ fn format_import(imp: &Import) -> String {
             }
             s.push_str(&format_dotted_name(path));
             s.push_str(" import ");
-            s.push_str(&comma_join(names.iter().map(|(name, as_name)| {
+            s.push_str(&comma_join(names.iter().map(|&(ref name, ref as_name)| {
                 let mut s2 = String::new();
                 s2.push_str(name);
-                if let Some(as_name) = as_name {
+                if let &Some(ref as_name) = as_name {
                     s2.push_str(" as ");
                     s2.push_str(as_name);
                 }
@@ -652,10 +652,10 @@ fn format_import(imp: &Import) -> String {
         },
         Import::Import { ref names } => {
             s.push_str("import ");
-            s.push_str(&comma_join(names.iter().map(|(name, as_name)| {
+            s.push_str(&comma_join(names.iter().map(|&(ref name, ref as_name)| {
                 let mut s2 = String::new();
                 s2.push_str(&format_dotted_name(name));
-                if let Some(as_name) = as_name {
+                if let &Some(ref as_name) = as_name {
                     s2.push_str(" as ");
                     s2.push_str(as_name);
                 }

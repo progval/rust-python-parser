@@ -57,19 +57,13 @@ named!(escapedchar<StrSpan, Option<PyStringCodePoint>>,
         unicode_names2::character(&name.iter().collect::<String>()).map(cp_from_char)
       }
     | preceded!(char!('u'), count!(one_of!("0123456789abcdefABCDEF"), 4)) => { |v: Vec<char>| {
-        let it: Vec<u32> = v.iter().map(|c| c.to_digit(16).unwrap()).collect();
-        if let [d1, d2, d3, d4] = &it[..] {
-            cp_from_u32((d1 << 12) + (d2 << 8) + (d3 << 4) + d4)
-        }
-        else { unreachable!() }
+        let v: Vec<u32> = v.iter().map(|c| c.to_digit(16).unwrap()).collect();
+        cp_from_u32((v[0] << 12) + (v[1] << 8) + (v[2] << 4) + v[3])
       }}
     | preceded!(char!('U'), count!(one_of!("0123456789abcdefABCDEF"), 8)) => { |v: Vec<char>| {
-        let it: Vec<u32> = v.iter().map(|c| c.to_digit(16).unwrap()).collect();
-        if let [d1, d2, d3, d4, d5, d6, d7, d8] = &it[..] {
-            cp_from_u32((d1 << 28) + (d2 << 24) + (d3 << 20) + (d4 << 16) +
-                                  (d5 << 12) + (d6 << 8) + (d7 << 4) + d8)
-        }
-        else { unreachable!() }
+        let v: Vec<u32> = v.iter().map(|c| c.to_digit(16).unwrap()).collect();
+        cp_from_u32((v[0] << 28) + (v[1] << 24) + (v[2] << 20) + (v[3] << 16) +
+                    (v[4] << 12) + (v[5] << 8 ) + (v[6] << 4 ) + v[7])
       }}
     )
   )
