@@ -9,5 +9,5 @@ script:
     - cargo test --no-default-features --features "$FEATURES"
 env:
     matrix:
-        - FEATURES="bigint wtf8"
+        - FEATURES="bigint wtf8 unicode-names"
         - FEATURES=""

@@ -68,6 +68,8 @@ extern crate nom_locate;
 extern crate pretty_assertions;
 
 extern crate unicode_xid;
+
+#[cfg(feature="unicode-names")]
 extern crate unicode_names2;
 
 #[cfg(feature="bigint")]

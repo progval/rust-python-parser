@@ -628,6 +628,12 @@ mod tests {
             Box::new(Expression::String(vec![new_pystring("", "\u{8a}")])))
         ));
 
+    }
+
+    #[test]
+    #[cfg_attr(not(feature="unicode-names"), ignore)]
+    fn test_unicode_name() {
+        let atom = ExpressionParser::<NewlinesAreNotSpaces>::atom;
         assert_parse_eq(atom(make_strspan(r#"'\N{snowman}'"#)), Ok((make_strspan(""),
             Box::new(Expression::String(vec![new_pystring("", "☃")])))
         ));

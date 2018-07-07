@@ -3,6 +3,7 @@
 pub enum PyParseError {
     UnexpectedIndent,
     ExpectedIndent,
+    DisabledFeature,
 }
 impl From<PyParseError> for u32 {
     fn from(e: PyParseError) -> u32 {

@@ -1,11 +1,13 @@
 use nom::anychar;
 
+#[cfg(feature="unicode-names")]
 use unicode_names2;
 
 #[cfg(feature="wtf8")]
 use wtf8;
 
 use helpers::StrSpan;
+use errors::PyParseError;
 use ast::*;
 
 #[cfg(feature="wtf8")]
@@ -23,6 +25,19 @@ fn cp_from_char(c: char) -> char {
 #[cfg(not(feature="wtf8"))]
 fn cp_from_u32(n: u32) -> Option<char> {
     ::std::char::from_u32(n)
+}
+
+#[cfg(feature="unicode-names")]
+named!(unicode_escaped_name<StrSpan, Option<PyStringCodePoint>>,
+  map!(
+    preceded!(char!('N'), delimited!(char!('{'), many1!(none_of!("}")), char!('}'))),
+    |name: Vec<char>| unicode_names2::character(&name.iter().collect::<String>()).map(cp_from_char)
+  )
+);
+
+#[cfg(not(feature="unicode-names"))]
+pub fn unicode_escaped_name(i: StrSpan) -> Result<(StrSpan, Option<PyStringCodePoint>), ::nom::Err<StrSpan>> {
+    Err(::nom::Err::Error(::nom::Context::Code(i, ::nom::ErrorKind::Custom(PyParseError::DisabledFeature.into()))))
 }
 
 named!(escapedchar<StrSpan, Option<PyStringCodePoint>>,
@@ -53,9 +68,7 @@ named!(escapedchar<StrSpan, Option<PyStringCodePoint>>,
             _ => unreachable!(),
         }
       }
-    | preceded!(char!('N'), delimited!(char!('{'), many1!(none_of!("}")), char!('}'))) => { |name: Vec<char>|
-        unicode_names2::character(&name.iter().collect::<String>()).map(cp_from_char)
-      }
+    | unicode_escaped_name
     | preceded!(char!('u'), count!(one_of!("0123456789abcdefABCDEF"), 4)) => { |v: Vec<char>| {
         let v: Vec<u32> = v.iter().map(|c| c.to_digit(16).unwrap()).collect();
         cp_from_u32((v[0] << 12) + (v[1] << 8) + (v[2] << 4) + v[3])
