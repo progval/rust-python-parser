@@ -13,11 +13,16 @@
 //! # String encoding
 //!
 //! `ast::PyString`s are WTF8-encoded if the `wtf8` feature is enabled
-//! (the default) allowing full support for Python's string litteral.
+//! (the default) allowing full support for Python's string literals.
 //!
-//! If that feature is disabled, they default to regular Rust string
+//! If that feature is disabled, they default to regular Rust strings.
 //! Note that without the `wtf8` feature, some valid string
 //! literals will be badly parsed (missing characters).
+//!
+//! # Python version support
+//!
+//! Currently supports Python 3.7's syntax (and Python 3.8 up to
+//! [2018-09-22](http://github.com/python/cpython/commit/fd97d1f1af910a6222ea12aec42c456b64f9aee4)).
 //!
 //! # Example
 //!
