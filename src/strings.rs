@@ -3,11 +3,13 @@ use nom::anychar;
 #[cfg(feature = "unicode-names")]
 use unicode_names2;
 
+#[cfg(not(feature = "unicode-names"))]
+use errors::PyParseError;
+
 #[cfg(feature = "wtf8")]
 use wtf8;
 
 use ast::*;
-use errors::PyParseError;
 use helpers::StrSpan;
 
 #[cfg(feature = "wtf8")]
