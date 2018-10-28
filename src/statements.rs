@@ -149,7 +149,7 @@ named!(flow_stmt<StrSpan, Statement>,
   | keyword!("continue") => { |_| Statement::Continue }
   | preceded!(
       tuple!(keyword!("return"), spaces_nonl),
-      return_error!(ws_nonl!(call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist_star_expr)))
+      ws_nonl!(call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist_star_expr))
     ) => { |e| Statement::Return(e) }
   | raise_stmt
   | call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr)
