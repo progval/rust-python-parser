@@ -327,6 +327,8 @@ pub enum Statement {
     Expressions(Vec<Expression>),
     // `lhs = rhs1 = rhs2` -> `lhs, vec![rhs1, rhs2]`
     Assignment(Vec<Expression>, Vec<Vec<Expression>>),
+    // `lhs: type` -> `lhs, type`
+    TypeAnnotation(Vec<Expression>, Expression),
     // `lhs: type = rhs` -> `lhs, type, rhs`
     TypedAssignment(Vec<Expression>, Expression, Vec<Expression>),
     // `lhs += rhs` -> `lhs, AugAssignOp::Add, rhs`

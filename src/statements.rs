@@ -64,13 +64,17 @@ named!(expr_stmt<StrSpan, Statement>,
   do_parse!(
     lhs: call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist_star_expr) >>
     r: ws_nonl!(alt!(
-      // Case 1: "foo: bar = baz"
+      // Case 1: "foo: bar = baz" and "foo: bar"
       do_parse!(
         char!(':') >>
         typed: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
-        char!('=') >>
-        rhs: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >> (
-          Statement::TypedAssignment(lhs.clone(), *typed, vec![*rhs])
+        rhs: opt!(ws_nonl!(preceded!(char!('='),
+            call!(ExpressionParser::<NewlinesAreNotSpaces>::test)
+        ))) >> (
+          match rhs {
+              None => Statement::TypeAnnotation(lhs.clone(), *typed),
+              Some(rhs) => Statement::TypedAssignment(lhs.clone(), *typed, vec![*rhs]),
+          }
         )
       )
 
@@ -970,6 +974,18 @@ mod tests {
                         Expression::Name("baz".to_string()),
                     ],
                 ],
+            )
+        )));
+    }
+
+    #[test]
+    fn test_typeannotation() {
+        assert_parse_eq(small_stmt(make_strspan("foo: bar")), Ok((make_strspan(""),
+            Statement::TypeAnnotation(
+                vec![
+                    Expression::Name("foo".to_string()),
+                ],
+                Expression::Name("bar".to_string()),
             )
         )));
     }

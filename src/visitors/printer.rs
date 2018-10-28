@@ -113,6 +113,11 @@ fn format_statement(indent: usize, stmt: &Statement) -> String {
             }
             s.push_str("\n");
         },
+        Statement::TypeAnnotation(ref lhs, ref typed) => {
+            s.push_str(&format!("{}: {}\n",
+                comma_join(lhs.iter().map(format_expr)),
+                format_expr(typed)));
+        },
         Statement::TypedAssignment(ref lhs, ref typed, ref rhs) => {
             s.push_str(&format!("{}:{} = {}\n",
                 comma_join(lhs.iter().map(format_expr)),
