@@ -359,7 +359,7 @@ named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
   alt!(
-    switch!(peek!(ws_nonl!(first_word)),
+    switch!(peek!(preceded!(indent!(indent), first_word)),
       "if" => return_error!(call!(if_stmt, indent))
     | "for" => return_error!(call!(for_stmt, indent))
     | "while" => return_error!(call!(while_stmt, indent))

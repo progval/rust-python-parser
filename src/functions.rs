@@ -33,7 +33,7 @@ named_args!(decorators(indent: usize) <StrSpan, Vec<Decorator>>,
 named_args!(pub decorated(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     decorators: call!(decorators, indent) >>
-    s: switch!(peek!(ws_nonl!(first_word)),
+    s: switch!(peek!(preceded!(indent!(indent), first_word)),
         "def" => call!(funcdef, indent, decorators.clone()) // FIXME: do not clone
       | "async" => call!(funcdef, indent, decorators.clone()) // FIXME: do not clone
       | "class" => call!(classdef, indent, decorators)
