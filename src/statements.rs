@@ -62,7 +62,7 @@ named!(small_stmt<StrSpan, Statement>,
 // annassign: ':' test ['=' test]
 named!(expr_stmt<StrSpan, Statement>,
   do_parse!(
-    lhs: testlist_star_expr >>
+    lhs: call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist_star_expr) >>
     r: ws_nonl!(alt!(
       // Case 1: "foo: bar = baz"
       do_parse!(
@@ -89,35 +89,13 @@ named!(expr_stmt<StrSpan, Statement>,
       do_parse!(
         rhs: many0!(ws_nonl!(preceded!(char!('='), alt!(
           call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
-        | testlist_star_expr
+        | call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist_star_expr)
         )))) >> (
           Statement::Assignment(lhs, rhs)
         )
       )
     )) >>
     (r)
-  )
-);
-
-// testlist_star_expr: (test|star_expr) (',' (test|star_expr))* [',']
-named!(testlist_star_expr<StrSpan, Vec<Expression>>,
-  do_parse!(
-    list: separated_nonempty_list!(
-      ws_nonl!(char!(',')),
-      map!(alt!(
-        call!(ExpressionParser::<NewlinesAreNotSpaces>::test)
-      | call!(ExpressionParser::<NewlinesAreNotSpaces>::star_expr)
-      ), |e| *e)
-    ) >>
-    trailing_comma: opt!(ws_nonl!(char!(','))) >> (
-      if trailing_comma.is_some() && list.len() < 2 {
-          // This prevents "foo, =" from being parsed as "foo ="
-          vec![Expression::TupleLiteral(list.into_iter().map(SetItem::Unique).collect())]
-      }
-      else {
-          list
-      }
-    )
   )
 );
 
@@ -159,7 +137,7 @@ named!(pass_stmt<StrSpan, Statement>,
 // flow_stmt: break_stmt | continue_stmt | return_stmt | raise_stmt | yield_stmt
 // break_stmt: 'break'
 // continue_stmt: 'continue'
-// return_stmt: 'return' [testlist]
+// return_stmt: 'return' [testlist_star_expr]
 // yield_stmt: yield_expr
 named!(flow_stmt<StrSpan, Statement>,
   alt!(
@@ -167,7 +145,7 @@ named!(flow_stmt<StrSpan, Statement>,
   | keyword!("continue") => { |_| Statement::Continue }
   | preceded!(
       tuple!(keyword!("return"), spaces_nonl),
-      return_error!(ws_nonl!(call!(ExpressionParser::<NewlinesAreNotSpaces>::possibly_empty_testlist)))
+      return_error!(ws_nonl!(call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist_star_expr)))
     ) => { |e| Statement::Return(e) }
   | raise_stmt
   | call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr)
@@ -1190,17 +1168,6 @@ mod tests {
                 path: vec!["qux".to_string()],
                 names: vec![("foo".to_string(), Some("bar".to_string()))],
             })]
-        )));
-    }
-
-    #[test]
-    fn test_unpack() {
-        assert_parse_eq(testlist_star_expr(make_strspan("foo,")), Ok((make_strspan(""),
-            vec![
-                Expression::TupleLiteral(vec![
-                    SetItem::Unique(Expression::Name("foo".to_string())),
-                ]),
-            ]
         )));
     }
 }

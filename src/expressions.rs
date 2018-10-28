@@ -375,6 +375,28 @@ named!(pub possibly_empty_testlist<StrSpan, Vec<Expression>>,
   )
 );
 
+// testlist_star_expr: (test|star_expr) (',' (test|star_expr))* [',']
+named!(pub testlist_star_expr<StrSpan, Vec<Expression>>,
+  do_parse!(
+    list: separated_nonempty_list!(
+      ws_auto!(char!(',')),
+      map!(alt!(
+        call!(Self::test)
+      | call!(Self::star_expr)
+      ), |e| *e)
+    ) >>
+    trailing_comma: opt!(ws_auto!(char!(','))) >> (
+      if trailing_comma.is_some() && list.len() < 2 {
+          // This prevents "foo, =" from being parsed as "foo ="
+          vec![Expression::TupleLiteral(list.into_iter().map(SetItem::Unique).collect())]
+      }
+      else {
+          list
+      }
+    )
+  )
+);
+
 } // end ExpressionParser
 
 /*********************************************************************
@@ -568,13 +590,13 @@ named_args!(comp_if(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<ComprehensionChu
 
 
 // yield_expr: 'yield' [yield_arg]
-// yield_arg: 'from' test | testlist
+// yield_arg: 'from' test | testlist_star_expr
 named!(pub yield_expr<StrSpan, Expression>,
   ws_auto!(preceded!(
     keyword!("yield"),
     ws_auto!(alt!(
       preceded!(ws_auto!(keyword!("from")), call!(Self::test)) => { |e| Expression::YieldFrom(e) }
-    | call!(Self::testlist) => { |e| Expression::Yield(e) }
+    | call!(Self::testlist_star_expr) => { |e| Expression::Yield(e) }
     | tag!("") => { |_| Expression::Yield(Vec::new()) }
     ))
   ))
@@ -1650,6 +1672,18 @@ mod tests {
                 Default::default(),
                 Box::new(Expression::Yield(Vec::new())),
             ))
+        )));
+    }
+
+    #[test]
+    fn test_unpack() {
+        let testlist_star_expr = ExpressionParser::<NewlinesAreNotSpaces>::testlist_star_expr;
+        assert_parse_eq(testlist_star_expr(make_strspan("foo,")), Ok((make_strspan(""),
+            vec![
+                Expression::TupleLiteral(vec![
+                    SetItem::Unique(Expression::Name("foo".to_string())),
+                ]),
+            ]
         )));
     }
 }
