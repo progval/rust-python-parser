@@ -535,6 +535,8 @@ fn format_expr(e: &Expression) -> String {
             format!("[{} {}]", format_setitem(e), space_join(comp.iter().map(format_comp))),
         Expression::Generator(ref e, ref comp) =>
             format!("({} {})", format_setitem(e), space_join(comp.iter().map(format_comp))),
+        Expression::Await(ref e) =>
+            format!("await {}", format_expr(e)),
 
         Expression::Call(ref e, ref args) => {
             match **e {

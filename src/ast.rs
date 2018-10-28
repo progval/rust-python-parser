@@ -226,6 +226,7 @@ pub enum Expression {
     SetComp(Box<SetItem>, Vec<ComprehensionChunk>),
     ListComp(Box<SetItem>, Vec<ComprehensionChunk>),
     Generator(Box<SetItem>, Vec<ComprehensionChunk>),
+    Await(Box<Expression>),
 
     Call(Box<Expression>, Vec<Argument>),
     Subscript(Box<Expression>, Vec<Subscript>),

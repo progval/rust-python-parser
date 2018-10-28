@@ -338,7 +338,7 @@ named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
         preceded!(
           newline,
           return_error!(
-            ErrorKind::Custom(PyParseError::ExpectedIndent.into()),
+            ::nom::ErrorKind::Custom(PyParseError::ExpectedIndent.into()),
             do_parse!(
               count!(char!(' '), indent) >>
               new_spaces: many1!(char!(' ')) >> ({
@@ -386,7 +386,7 @@ named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
     | "def" => return_error!(call!(decorated, indent))
     | "class" => return_error!(call!(decorated, indent))
     | "async" => return_error!(alt!(
-        call!(decorated, indent) // ASYNC funcdef
+        call!(decorated, indent) // 'async' funcdef
       | call!(for_stmt, indent)
       ))
     )
@@ -394,7 +394,7 @@ named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
   )
 );
 
-// async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
+// async_stmt: 'async' (funcdef | with_stmt | for_stmt)
 // taken care of in other parsers
 
 named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,

@@ -212,11 +212,12 @@ named!(power<StrSpan, Box<Expression>>,
 enum Trailer { Call(Vec<Argument>), Subscript(Vec<Subscript>), Attribute(Name) }
 impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
 
-// atom_expr: [AWAIT] atom trailer*
+// atom_expr: ['await'] atom trailer*
 // trailer: '(' [arglist] ')' | '[' subscriptlist ']' | '.' NAME
 // subscriptlist: subscript (',' subscript)* [',']
 named!(atom_expr<StrSpan, Box<Expression>>,
   do_parse!(
+    async: map!(opt!(terminated!(tag!("await"), space_sep!())), |o| o.is_some()) >>
     lhs: call!(Self::atom) >>
     trailers: fold_many0!(
       ws_auto!(alt!(
@@ -231,7 +232,7 @@ named!(atom_expr<StrSpan, Box<Expression>>,
         Trailer::Attribute(name) => Expression::Attribute(acc, name),
       })
     ) >> (
-      trailers
+      if async { Box::new(Expression::Await(trailers)) } else { trailers }
     )
   )
 );
@@ -530,7 +531,8 @@ named_args!(opt_comp_iter(acc: Vec<ComprehensionChunk>) <StrSpan, Vec<Comprehens
   return_error!(map!(opt!(call!(Self::comp_iter, acc.clone())), |r| r.unwrap_or(acc))) // FIXME: do not clone
 );
 
-// comp_for: [ASYNC] 'for' exprlist 'in' or_test [comp_iter]
+// sync_comp_for: 'for' exprlist 'in' or_test [comp_iter]
+// comp_for: ['async'] sync_comp_for
 named!(comp_for<StrSpan, Vec<ComprehensionChunk>>,
   call!(Self::comp_for2, Vec::new())
 );

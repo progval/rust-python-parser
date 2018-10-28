@@ -45,7 +45,7 @@ named_args!(pub decorated(indent: usize) <StrSpan, CompoundStatement>,
  * Function definition
  *********************************************************************/
 
-// async_funcdef: ASYNC funcdef
+// async_funcdef: 'async' funcdef
 // funcdef: 'def' NAME parameters ['->' test] ':' suite
 named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, CompoundStatement>,
   do_parse!(
