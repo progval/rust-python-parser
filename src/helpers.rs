@@ -200,10 +200,7 @@ pub(crate) fn assert_parse_eq<T: Debug + PartialEq>(
 }
 
 pub(crate) fn first_word(i: StrSpan) -> Result<(StrSpan, &str), ::nom::Err<StrSpan>> {
-    match ::nom::alpha(i) {
-        Ok((i, s)) => Ok((i, s.fragment.0)),
-        Err(e) => Err(e),
-    }
+    map!(i, terminated!(call!(::nom::alpha), word_end), |s| s.fragment.0)
 }
 
 // https://github.com/Geal/nom/pull/800
