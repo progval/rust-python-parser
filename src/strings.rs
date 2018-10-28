@@ -1,33 +1,35 @@
 use nom::anychar;
 
-#[cfg(feature="unicode-names")]
+#[cfg(feature = "unicode-names")]
 use unicode_names2;
 
-#[cfg(feature="wtf8")]
+#[cfg(not(feature = "unicode-names"))]
+use errors::PyParseError;
+
+#[cfg(feature = "wtf8")]
 use wtf8;
 
-use helpers::StrSpan;
-use errors::PyParseError;
 use ast::*;
+use helpers::StrSpan;
 
-#[cfg(feature="wtf8")]
+#[cfg(feature = "wtf8")]
 fn cp_from_char(c: char) -> wtf8::CodePoint {
     wtf8::CodePoint::from_char(c)
 }
-#[cfg(feature="wtf8")]
+#[cfg(feature = "wtf8")]
 fn cp_from_u32(n: u32) -> Option<wtf8::CodePoint> {
     wtf8::CodePoint::from_u32(n)
 }
-#[cfg(not(feature="wtf8"))]
+#[cfg(not(feature = "wtf8"))]
 fn cp_from_char(c: char) -> char {
     c
 }
-#[cfg(not(feature="wtf8"))]
+#[cfg(not(feature = "wtf8"))]
 fn cp_from_u32(n: u32) -> Option<char> {
     ::std::char::from_u32(n)
 }
 
-#[cfg(feature="unicode-names")]
+#[cfg(feature = "unicode-names")]
 named!(unicode_escaped_name<StrSpan, Option<PyStringCodePoint>>,
   map!(
     preceded!(char!('N'), delimited!(char!('{'), many1!(none_of!("}")), char!('}'))),
@@ -35,9 +37,14 @@ named!(unicode_escaped_name<StrSpan, Option<PyStringCodePoint>>,
   )
 );
 
-#[cfg(not(feature="unicode-names"))]
-pub fn unicode_escaped_name(i: StrSpan) -> Result<(StrSpan, Option<PyStringCodePoint>), ::nom::Err<StrSpan>> {
-    Err(::nom::Err::Error(::nom::Context::Code(i, ::nom::ErrorKind::Custom(PyParseError::DisabledFeature.into()))))
+#[cfg(not(feature = "unicode-names"))]
+pub fn unicode_escaped_name(
+    i: StrSpan,
+) -> Result<(StrSpan, Option<PyStringCodePoint>), ::nom::Err<StrSpan>> {
+    Err(::nom::Err::Error(::nom::Context::Code(
+        i,
+        ::nom::ErrorKind::Custom(PyParseError::DisabledFeature.into()),
+    )))
 }
 
 named!(escapedchar<StrSpan, Option<PyStringCodePoint>>,
@@ -154,4 +161,3 @@ named!(pub string<StrSpan, PyString>,
     ) >> (PyString { prefix: prefix.to_string(), content: content })
   )
 );
-
