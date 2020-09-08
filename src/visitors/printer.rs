@@ -465,10 +465,10 @@ fn format_string(v: &Vec<PyString>) -> String {
             0x9 => "\\t".to_string(),
             0x5c => "\\\\".to_string(),
             0x22 => "\\\"".to_string(),
-            0x20...0x7e => c.to_char().unwrap().to_string(), // unwrap can't panic
-            0x00...0x1f | 0x7f | 0x80...0xff => format!("\\x{:02x}", c.to_u32()),
-            0x100...0xffff => format!("\\u{:04x}", c.to_u32()),
-            0x10000...0x10ffff => format!("\\U{:08x}", c.to_u32()),
+            0x20..=0x7e => c.to_char().unwrap().to_string(), // unwrap can't panic
+            0x00..=0x1f | 0x7f | 0x80..=0xff => format!("\\x{:02x}", c.to_u32()),
+            0x100..=0xffff => format!("\\u{:04x}", c.to_u32()),
+            0x10000..=0x10ffff => format!("\\U{:08x}", c.to_u32()),
             _ => unreachable!(),
         }).collect::<Vec<_>>()[..].concat())
     ))
@@ -512,9 +512,8 @@ fn format_expr(e: &Expression) -> String {
                 b'\t' => "\\t".to_string(),
                 b'\\' => "\\\\".to_string(),
                 b'"' => "\\\"".to_string(),
-                0x20...0x7e => (*b as char).to_string(),
-                0x00...0x1f | 0x7f | 0x80...0xff => format!("\\x{:02x}", b),
-                _ => unreachable!(), // waiting for https://github.com/rust-lang/rust/pull/50912
+                0x20..=0x7e => (*b as char).to_string(),
+                0x00..=0x1f | 0x7f | 0x80..=0xff => format!("\\x{:02x}", b),
             }).collect::<Vec<_>>()[..].concat())
         },
 

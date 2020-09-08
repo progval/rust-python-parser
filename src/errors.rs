@@ -13,7 +13,6 @@ impl From<PyParseError> for u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use nom;
     use nom::{Context, ErrorKind};
     use nom::types::CompleteStr;
