@@ -439,7 +439,7 @@ fn format_subscript(sub: &Subscript) -> String {
 
 fn format_comp(comp: &ComprehensionChunk) -> String {
     match *comp {
-        ComprehensionChunk::If { ref cond } => format!("if {}", format_expr(cond)),
+        ComprehensionChunk::If { ref cond } => format!("if ({})", format_expr(cond)),
         ComprehensionChunk::For { async, ref item, ref iterator } => format!("{}for {} in {}",
             if async { "async " } else { "" },
             comma_join(item.iter().map(format_expr)),
@@ -670,4 +670,34 @@ fn format_import(imp: &Import) -> String {
         }
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ternary_in_comp_if() {
+        let e = Expression::ListComp(
+            Box::new(SetItem::Unique(Expression::Name("a".to_string()))),
+            vec![
+                ComprehensionChunk::For {
+                    async: false,
+                    item: vec![Expression::Name("a".to_string())],
+                    iterator: Expression::Name("L".to_string()),
+                },
+                ComprehensionChunk::If {
+                    cond: Expression::Ternary(
+                        Box::new(Expression::Call(
+                            Box::new(Expression::Name("f".to_string())),
+                            vec![Argument::Positional(Expression::Name("a".to_string()))],
+                        )),
+                        Box::new(Expression::Name("a".to_string())),
+                        Box::new(Expression::None),
+                    ),
+                },
+            ],
+        );
+        assert_eq!(&format_expr(&e), "[a for a in L if ((f(a)) if (a) else (None))]");
+    }
 }
