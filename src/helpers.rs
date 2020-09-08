@@ -3,11 +3,10 @@ use std::fmt::Debug;
 
 use unicode_xid::UnicodeXID;
 
-use nom::Slice;
 use nom::types::CompleteStr;
+use nom::Slice;
 use nom_locate::LocatedSpan;
 pub(crate) type StrSpan<'a> = LocatedSpan<CompleteStr<'a>>;
-
 
 /// Like `ws!()`, but does not allow newlines.
 macro_rules! ws_nonl (
@@ -65,18 +64,19 @@ named!(pub spaces_nl<StrSpan, ()>,
 pub fn spaces_nonl(i: StrSpan) -> Result<(StrSpan, ()), ::nom::Err<StrSpan>> {
     let mut it = i.fragment.chars().enumerate().peekable();
     while let Some((index, c)) = it.next() {
-        let next_char = it.peek().map(|&(_,c)|c);
+        let next_char = it.peek().map(|&(_, c)| c);
         match c {
             ' ' | '\t' | '\x0c' => (),
-            '\\' if next_char.unwrap_or(' ') == '\n' => {it.next();},
+            '\\' if next_char.unwrap_or(' ') == '\n' => {
+                it.next();
+            }
             _ => {
                 if index == 0 {
-                    return Ok((i, ()))
+                    return Ok((i, ()));
+                } else {
+                    return Ok((i.slice(index..), ()));
                 }
-                else {
-                    return Ok((i.slice(index..), ()))
-                }
-            },
+            }
         }
     }
     Ok((i.slice(i.fragment.len()..), ()))
@@ -109,9 +109,17 @@ named!(pub space_sep_nonl<StrSpan, ()>,
 // argument corresponding to newlines, so monomorphing the structure
 // generates the two subparsers. Then, a simple constant propagation
 // is able to get rid of the runtime checks for this boolean.
-pub(crate) trait AreNewlinesSpaces { const VALUE: bool; }
-pub(crate) struct NewlinesAreSpaces; impl AreNewlinesSpaces for NewlinesAreSpaces { const VALUE: bool = true; }
-pub(crate) struct NewlinesAreNotSpaces; impl AreNewlinesSpaces for NewlinesAreNotSpaces { const VALUE: bool = false; }
+pub(crate) trait AreNewlinesSpaces {
+    const VALUE: bool;
+}
+pub(crate) struct NewlinesAreSpaces;
+impl AreNewlinesSpaces for NewlinesAreSpaces {
+    const VALUE: bool = true;
+}
+pub(crate) struct NewlinesAreNotSpaces;
+impl AreNewlinesSpaces for NewlinesAreNotSpaces {
+    const VALUE: bool = false;
+}
 
 macro_rules! spaces {
     ( $i:expr, $($args:tt)* ) => {
@@ -156,7 +164,9 @@ named!(pub word_end<StrSpan, ()>,
 );
 
 macro_rules! keyword {
-    ($i:expr, $kw:expr) => { terminated!($i, tag!($kw), word_end) }
+    ($i:expr, $kw:expr) => {
+        terminated!($i, tag!($kw), word_end)
+    };
 }
 
 named!(pub newline<StrSpan, ()>,
@@ -184,15 +194,22 @@ pub fn make_strspan(s: &str) -> StrSpan {
 
 #[cfg(test)]
 pub(crate) fn assert_parse_eq<T: Debug + PartialEq>(
-        left:  Result<(StrSpan, T), ::nom::Err<StrSpan>>,
-        right: Result<(StrSpan, T), ::nom::Err<StrSpan>>,
-        ) {
+    left: Result<(StrSpan, T), ::nom::Err<StrSpan>>,
+    right: Result<(StrSpan, T), ::nom::Err<StrSpan>>,
+) {
     use nom::Context;
     match (left, right) {
-        (Ok((left_span, left_tree)), Ok((right_span, right_tree))) =>
-            assert_eq!(((left_span.fragment, left_tree)), ((right_span.fragment, right_tree))),
-        (Err(::nom::Err::Failure(Context::Code(left_span, left_code))), Err(::nom::Err::Failure(Context::Code(right_span, right_code)))) =>
-            assert_eq!((left_span.fragment, left_code), (right_span.fragment, right_code)),
+        (Ok((left_span, left_tree)), Ok((right_span, right_tree))) => assert_eq!(
+            ((left_span.fragment, left_tree)),
+            ((right_span.fragment, right_tree))
+        ),
+        (
+            Err(::nom::Err::Failure(Context::Code(left_span, left_code))),
+            Err(::nom::Err::Failure(Context::Code(right_span, right_code))),
+        ) => assert_eq!(
+            (left_span.fragment, left_code),
+            (right_span.fragment, right_code)
+        ),
         (Err(::nom::Err::Incomplete(_)), _) => unreachable!(),
         (_, Err(::nom::Err::Incomplete(_))) => panic!("We're only using complete strings here!"),
         (l, r) => assert_eq!(l, r),
@@ -200,7 +217,9 @@ pub(crate) fn assert_parse_eq<T: Debug + PartialEq>(
 }
 
 pub(crate) fn first_word(i: StrSpan) -> Result<(StrSpan, &str), ::nom::Err<StrSpan>> {
-    map!(i, terminated!(call!(::nom::alpha), word_end), |s| s.fragment.0)
+    map!(i, terminated!(call!(::nom::alpha), word_end), |s| s
+        .fragment
+        .0)
 }
 
 // https://github.com/Geal/nom/pull/800
@@ -273,11 +292,12 @@ macro_rules! indent {
     ($i:expr, $nb_spaces:expr) => {{
         use nom::ErrorKind;
         use $crate::errors::PyParseError;
-        count!($i, char!(' '), $nb_spaces).and_then(|(i2,_)|
-            return_error!(i2,
+        count!($i, char!(' '), $nb_spaces).and_then(|(i2, _)| {
+            return_error!(
+                i2,
                 ErrorKind::Custom(PyParseError::UnexpectedIndent.into()),
                 not!(peek!(char!(' ')))
             )
-        )
-    }}
+        })
+    }};
 }

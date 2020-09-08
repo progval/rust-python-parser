@@ -62,7 +62,7 @@
 //! );
 //! ```
 
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 
 #[macro_use]
 extern crate nom;
@@ -74,15 +74,15 @@ extern crate pretty_assertions;
 
 extern crate unicode_xid;
 
-#[cfg(feature="unicode-names")]
+#[cfg(feature = "unicode-names")]
 extern crate unicode_names2;
 
-#[cfg(feature="bigint")]
-extern crate num_traits;
-#[cfg(feature="bigint")]
+#[cfg(feature = "bigint")]
 extern crate num_bigint;
+#[cfg(feature = "bigint")]
+extern crate num_traits;
 
-#[cfg(feature="wtf8")]
+#[cfg(feature = "wtf8")]
 extern crate wtf8;
 
 #[macro_use]
@@ -91,18 +91,18 @@ mod helpers;
 mod expressions;
 #[macro_use]
 mod statements;
-mod functions;
-mod strings;
-mod bytes;
-mod numbers;
 pub mod ast;
-pub mod visitors;
+mod bytes;
 pub mod errors;
+mod functions;
+mod numbers;
+mod strings;
+pub mod visitors;
 
+use ast::*;
+use expressions::*;
 use helpers::*;
 use statements::*;
-use expressions::*;
-use ast::*;
 
 pub use helpers::make_strspan;
 
@@ -141,14 +141,47 @@ pub eval_input <StrSpan, Vec<Expression>>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use helpers::{make_strspan, assert_parse_eq};
+    use helpers::{assert_parse_eq, make_strspan};
 
     #[test]
     fn foo() {
         assert_parse_eq(newline(make_strspan("\n")), Ok((make_strspan(""), ())));
-        assert_parse_eq(parse_single_input(make_strspan("del foo")), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
-        assert_parse_eq(parse_single_input(make_strspan("del foo, bar")), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string()), Expression::Name("bar".to_string())])])));
-        assert_parse_eq(parse_single_input(make_strspan("del foo; del bar")), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("bar".to_string())])])));
-        assert_parse_eq(parse_single_input(make_strspan("del foo ;del bar")), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("bar".to_string())])])));
+        assert_parse_eq(
+            parse_single_input(make_strspan("del foo")),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+            )),
+        );
+        assert_parse_eq(
+            parse_single_input(make_strspan("del foo, bar")),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![
+                    Expression::Name("foo".to_string()),
+                    Expression::Name("bar".to_string()),
+                ])],
+            )),
+        );
+        assert_parse_eq(
+            parse_single_input(make_strspan("del foo; del bar")),
+            Ok((
+                make_strspan(""),
+                vec![
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
+                    Statement::Del(vec![Expression::Name("bar".to_string())]),
+                ],
+            )),
+        );
+        assert_parse_eq(
+            parse_single_input(make_strspan("del foo ;del bar")),
+            Ok((
+                make_strspan(""),
+                vec![
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
+                    Statement::Del(vec![Expression::Name("bar".to_string())]),
+                ],
+            )),
+        );
     }
 }

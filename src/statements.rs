@@ -1,11 +1,10 @@
 use std::marker::PhantomData;
 
+use ast::*;
 use errors::PyParseError;
-use helpers::*;
 use expressions::ExpressionParser;
 use functions::decorated;
-use ast::*;
-
+use helpers::*;
 
 macro_rules! call_test {
     ( $i:expr, $($args:tt)* ) => { call!($i, ExpressionParser::<NewlinesAreNotSpaces>::test, $($args)*) }
@@ -263,49 +262,47 @@ pub(crate) struct ImportParser<ANS: AreNewlinesSpaces> {
 }
 
 impl<ANS: AreNewlinesSpaces> ImportParser<ANS> {
+    // import_as_name: NAME ['as' NAME]
+    named!(import_as_name<StrSpan, (Name, Option<Name>)>,
+      tuple!(name, opt!(do_parse!(
+        spaces!() >>
+        keyword!("as") >>
+        spaces!() >>
+        name: name >> (
+          name
+        )
+      )))
+    );
 
-// import_as_name: NAME ['as' NAME]
-named!(import_as_name<StrSpan, (Name, Option<Name>)>,
-  tuple!(name, opt!(do_parse!(
-    spaces!() >>
-    keyword!("as") >>
-    spaces!() >>
-    name: name >> (
-      name
-    )
-  )))
-);
+    // dotted_as_name: dotted_name ['as' NAME]
+    named!(dotted_as_name<StrSpan, (Vec<Name>, Option<Name>)>,
+      tuple!(call!(Self::dotted_name), opt!(do_parse!(
+        spaces!() >>
+        keyword!("as") >>
+        spaces!() >>
+        name: name >> (
+          name
+        )
+      )))
+    );
 
-// dotted_as_name: dotted_name ['as' NAME]
-named!(dotted_as_name<StrSpan, (Vec<Name>, Option<Name>)>,
-  tuple!(call!(Self::dotted_name), opt!(do_parse!(
-    spaces!() >>
-    keyword!("as") >>
-    spaces!() >>
-    name: name >> (
-      name
-    )
-  )))
-);
+    // import_as_names: import_as_name (',' import_as_name)* [',']
+    named!(import_as_names<StrSpan, Vec<(Name, Option<Name>)>>,
+      ws_auto!(terminated!(
+        separated_nonempty_list!(ws_auto!(char!(',')), call!(Self::import_as_name)),
+        opt!(ws_auto!(char!(',')))
+      ))
+    );
 
-// import_as_names: import_as_name (',' import_as_name)* [',']
-named!(import_as_names<StrSpan, Vec<(Name, Option<Name>)>>,
-  ws_auto!(terminated!(
-    separated_nonempty_list!(ws_auto!(char!(',')), call!(Self::import_as_name)),
-    opt!(ws_auto!(char!(',')))
-  ))
-);
+    // dotted_as_names: dotted_as_name (',' dotted_as_name)*
+    named!(dotted_as_names<StrSpan, Vec<(Vec<Name>, Option<Name>)>>,
+      separated_nonempty_list!(ws_nonl!(char!(',')), call!(Self::dotted_as_name))
+    );
 
-// dotted_as_names: dotted_as_name (',' dotted_as_name)*
-named!(dotted_as_names<StrSpan, Vec<(Vec<Name>, Option<Name>)>>,
-  separated_nonempty_list!(ws_nonl!(char!(',')), call!(Self::dotted_as_name))
-);
-
-// dotted_name: NAME ('.' NAME)*
-named!(pub dotted_name<StrSpan, Vec<Name>>,
-  separated_nonempty_list!(ws_nonl!(char!('.')), name)
-);
-
+    // dotted_name: NAME ('.' NAME)*
+    named!(pub dotted_name<StrSpan, Vec<Name>>,
+      separated_nonempty_list!(ws_nonl!(char!('.')), name)
+    );
 } // end ImportParser
 
 /*********************************************************************
@@ -354,7 +351,6 @@ named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)
     )
   ))
 );
-
 
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
@@ -457,7 +453,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
     try_block: call!(block, indent) >>
     except_clauses: many0!(do_parse!(
       newline >>
-      indent!(indent) >> 
+      indent!(indent) >>
       keyword!("except") >>
       spaces_nonl >>
       catch_what: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
@@ -468,7 +464,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
         (*catch_what, catch_as, block)
       )
     )) >>
-    last_except: opt!(do_parse!( 
+    last_except: opt!(do_parse!(
       newline >>
       indent!(indent) >>
       tag!("except") >>
@@ -476,7 +472,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
       r: call!(block, indent) >>
       (r)
     )) >>
-    else_block: opt!(do_parse!( 
+    else_block: opt!(do_parse!(
       newline >>
       indent!(indent) >>
       tag!("else") >>
@@ -484,7 +480,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
       r: call!(block, indent) >>
       (r)
     )) >>
-    finally_block: opt!(do_parse!( 
+    finally_block: opt!(do_parse!(
       newline >>
       indent!(indent) >>
       tag!("finally") >>
@@ -512,7 +508,7 @@ named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
     contexts: separated_nonempty_list!(ws_nonl!(char!(',')), do_parse!(
       context: call!(ExpressionParser::<NewlinesAreNotSpaces>::expr) >>
       as_: opt!(preceded!(
-        ws_nonl!(keyword!("as")), 
+        ws_nonl!(keyword!("as")),
         call!(ExpressionParser::<NewlinesAreNotSpaces>::expr)
       )) >> (
         (*context, as_.map(|e| *e))
@@ -525,10 +521,6 @@ named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
   )
 );
 
-
-
-    
-
 /*********************************************************************
  * Unit tests
  *********************************************************************/
@@ -536,12 +528,24 @@ named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use helpers::{make_strspan, assert_parse_eq};
+    use helpers::{assert_parse_eq, make_strspan};
 
     #[test]
     fn test_statement_indent() {
-        assert_parse_eq(statement(make_strspan("del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
-        assert_parse_eq(statement(make_strspan(" del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(
+            statement(make_strspan("del foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+            )),
+        );
+        assert_parse_eq(
+            statement(make_strspan(" del foo"), 1),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+            )),
+        );
         assert!(statement(make_strspan(" del foo"), 0).is_err());
         assert!(statement(make_strspan("  del foo"), 1).is_err());
         assert!(statement(make_strspan("del foo"), 1).is_err());
@@ -549,35 +553,92 @@ mod tests {
 
     #[test]
     fn test_block() {
-        assert_parse_eq(block(make_strspan("\n del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
-        assert_parse_eq(block(make_strspan("\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
-        assert_parse_eq(block(make_strspan("\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(
+            block(make_strspan("\n del foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+            )),
+        );
+        assert_parse_eq(
+            block(make_strspan("\n  del foo"), 1),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+            )),
+        );
+        assert_parse_eq(
+            block(make_strspan("\n      del foo"), 1),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+            )),
+        );
         assert!(block(make_strspan("\ndel foo"), 0).is_err());
         assert!(block(make_strspan("\ndel foo"), 1).is_err());
         assert!(block(make_strspan("\n del foo"), 1).is_err());
 
-        assert_parse_eq(block(make_strspan("\n del foo\n del foo"), 0), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("foo".to_string())])])));
-        assert_parse_eq(block(make_strspan("\n  del foo\n  del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("foo".to_string())])])));
-        assert_parse_eq(block(make_strspan("\n      del foo\n      del foo"), 1), Ok((make_strspan(""), vec![Statement::Del(vec![Expression::Name("foo".to_string())]), Statement::Del(vec![Expression::Name("foo".to_string())])])));
-        assert_parse_eq(block(make_strspan("\n del foo\ndel foo"), 0), Ok((make_strspan("\ndel foo"), vec![Statement::Del(vec![Expression::Name("foo".to_string())])])));
+        assert_parse_eq(
+            block(make_strspan("\n del foo\n del foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
+                ],
+            )),
+        );
+        assert_parse_eq(
+            block(make_strspan("\n  del foo\n  del foo"), 1),
+            Ok((
+                make_strspan(""),
+                vec![
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
+                ],
+            )),
+        );
+        assert_parse_eq(
+            block(make_strspan("\n      del foo\n      del foo"), 1),
+            Ok((
+                make_strspan(""),
+                vec![
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
+                    Statement::Del(vec![Expression::Name("foo".to_string())]),
+                ],
+            )),
+        );
+        assert_parse_eq(
+            block(make_strspan("\n del foo\ndel foo"), 0),
+            Ok((
+                make_strspan("\ndel foo"),
+                vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+            )),
+        );
     }
-    
+
     #[test]
     fn test_unexpected_indent() {
         use errors::PyParseError;
 
-        assert_eq!(statement(make_strspan(" del foo"), 0),
+        assert_eq!(
+            statement(make_strspan(" del foo"), 0),
             Err(::nom::Err::Failure(::nom::Context::Code(
-                ::nom_locate::LocatedSpan { line: 1, offset: 0,
+                ::nom_locate::LocatedSpan {
+                    line: 1,
+                    offset: 0,
                     fragment: ::nom::types::CompleteStr(" del foo")
                 },
                 ::nom::ErrorKind::Custom(PyParseError::UnexpectedIndent.into())
             )))
         );
 
-        assert_eq!(block(make_strspan("\n del foo\n  del foo"), 0),
+        assert_eq!(
+            block(make_strspan("\n del foo\n  del foo"), 0),
             Err(::nom::Err::Failure(::nom::Context::Code(
-                ::nom_locate::LocatedSpan { line: 3, offset: 11,
+                ::nom_locate::LocatedSpan {
+                    line: 3,
+                    offset: 11,
                     fragment: ::nom::types::CompleteStr(" del foo")
                 },
                 ::nom::ErrorKind::Custom(PyParseError::UnexpectedIndent.into())
@@ -587,603 +648,639 @@ mod tests {
 
     #[test]
     fn test_del() {
-        assert_parse_eq(statement(make_strspan("del foo"), 0), Ok((make_strspan(""),
-            vec![
-                Statement::Del(vec![Expression::Name("foo".to_string())]),
-            ]
-        )));
+        assert_parse_eq(
+            statement(make_strspan("del foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+            )),
+        );
 
-        assert_parse_eq(statement(make_strspan("del foo, bar"), 0), Ok((make_strspan(""),
-            vec![
-                Statement::Del(vec![
+        assert_parse_eq(
+            statement(make_strspan("del foo, bar"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Del(vec![
                     Expression::Name("foo".to_string()),
-                    Expression::Name("bar".to_string())
-                ]),
-            ]
-        )));
+                    Expression::Name("bar".to_string()),
+                ])],
+            )),
+        );
     }
 
     #[test]
     fn test_assert1() {
-        assert_parse_eq(block(make_strspan("assert foo"), 0), Ok((make_strspan(""),
-            vec![
-                Statement::Assert(
-                    Expression::Name("foo".to_string()),
-                    None
-                ),
-            ]
-        )));
+        assert_parse_eq(
+            block(make_strspan("assert foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Assert(Expression::Name("foo".to_string()), None)],
+            )),
+        );
     }
 
     #[test]
     fn test_assert2() {
-        assert_parse_eq(block(make_strspan("assert foo and bar"), 0), Ok((make_strspan(""),
-            vec![
-                Statement::Assert(
-                    Expression::Bop(Bop::And,
+        assert_parse_eq(
+            block(make_strspan("assert foo and bar"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Assert(
+                    Expression::Bop(
+                        Bop::And,
                         Box::new(Expression::Name("foo".to_string())),
                         Box::new(Expression::Name("bar".to_string())),
                     ),
-                    None
-                ),
-            ]
-        )));
+                    None,
+                )],
+            )),
+        );
     }
 
     #[test]
     fn test_assert3() {
-        assert_parse_eq(block(make_strspan("assert (foo and bar)"), 0), Ok((make_strspan(""),
-            vec![
-                Statement::Assert(
-                    Expression::Bop(Bop::And,
+        assert_parse_eq(
+            block(make_strspan("assert (foo and bar)"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Assert(
+                    Expression::Bop(
+                        Bop::And,
                         Box::new(Expression::Name("foo".to_string())),
                         Box::new(Expression::Name("bar".to_string())),
                     ),
-                    None
-                ),
-            ]
-        )));
+                    None,
+                )],
+            )),
+        );
     }
 
     #[test]
     fn test_assert4() {
-        assert_parse_eq(block(make_strspan("assert (foo and\n bar)"), 0), Ok((make_strspan(""),
-            vec![
-                Statement::Assert(
-                    Expression::Bop(Bop::And,
+        assert_parse_eq(
+            block(make_strspan("assert (foo and\n bar)"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Assert(
+                    Expression::Bop(
+                        Bop::And,
                         Box::new(Expression::Name("foo".to_string())),
                         Box::new(Expression::Name("bar".to_string())),
                     ),
-                    None
-                ),
-            ]
-        )));
+                    None,
+                )],
+            )),
+        );
     }
 
     #[test]
     fn test_if() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar"), 0), Ok((make_strspan(""),
-            CompoundStatement::If(
-                vec![
-                    (
+        assert_parse_eq(
+            compound_stmt(make_strspan("if foo:\n del bar"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::If(
+                    vec![(
                         Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Del(vec![Expression::Name("bar".to_string())])
-                        ]
-                    ),
-                ],
-                None
-            )
-        )));
+                        vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                    )],
+                    None,
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_if_not() {
-        assert_parse_eq(compound_stmt(make_strspan("if not foo:\n del bar"), 0), Ok((make_strspan(""),
-            CompoundStatement::If(
-                vec![
-                    (
-                        Expression::Uop(Uop::Not,
-                            Box::new(Expression::Name("foo".to_string())),
-                        ),
-                        vec![
-                            Statement::Del(vec![Expression::Name("bar".to_string())])
-                        ]
-                    ),
-                ],
-                None
-            )
-        )));
+        assert_parse_eq(
+            compound_stmt(make_strspan("if not foo:\n del bar"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::If(
+                    vec![(
+                        Expression::Uop(Uop::Not, Box::new(Expression::Name("foo".to_string()))),
+                        vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                    )],
+                    None,
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_elif() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz"), 0), Ok((make_strspan(""),
-            CompoundStatement::If(
-                vec![
-                    (
-                        Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Del(vec![Expression::Name("bar".to_string())])
-                        ]
-                    ),
-                    (
-                        Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Del(vec![Expression::Name("baz".to_string())])
-                        ]
-                    ),
-                ],
-                None
-            )
-        )));
+        assert_parse_eq(
+            compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::If(
+                    vec![
+                        (
+                            Expression::Name("foo".to_string()),
+                            vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                        ),
+                        (
+                            Expression::Name("foo".to_string()),
+                            vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                        ),
+                    ],
+                    None,
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_if_else() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelse:\n del qux"), 0), Ok((make_strspan(""),
-            CompoundStatement::If(
-                vec![
-                    (
+        assert_parse_eq(
+            compound_stmt(make_strspan("if foo:\n del bar\nelse:\n del qux"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::If(
+                    vec![(
                         Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Del(vec![Expression::Name("bar".to_string())])
-                        ]
-                    ),
-                ],
-                Some(
-                    vec![
-                        Statement::Del(vec![Expression::Name("qux".to_string())])
-                    ]
-                )
-            )
-        )));
+                        vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                    )],
+                    Some(vec![Statement::Del(vec![Expression::Name(
+                        "qux".to_string(),
+                    )])]),
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_elif_else() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n del bar\nelif foo:\n del baz\nelse:\n del qux"), 0), Ok((make_strspan(""),
-            CompoundStatement::If(
-                vec![
-                    (
-                        Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Del(vec![Expression::Name("bar".to_string())])
-                        ]
-                    ),
-                    (
-                        Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Del(vec![Expression::Name("baz".to_string())])
-                        ]
-                    ),
-                ],
-                Some(
+        assert_parse_eq(
+            compound_stmt(
+                make_strspan("if foo:\n del bar\nelif foo:\n del baz\nelse:\n del qux"),
+                0,
+            ),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::If(
                     vec![
-                        Statement::Del(vec![Expression::Name("qux".to_string())])
-                    ]
-                )
-            )
-        )));
+                        (
+                            Expression::Name("foo".to_string()),
+                            vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                        ),
+                        (
+                            Expression::Name("foo".to_string()),
+                            vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                        ),
+                    ],
+                    Some(vec![Statement::Del(vec![Expression::Name(
+                        "qux".to_string(),
+                    )])]),
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_nested_if() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar"), 0), Ok((make_strspan(""),
-            CompoundStatement::If(
-                vec![
-                    (
+        assert_parse_eq(
+            compound_stmt(make_strspan("if foo:\n if foo:\n  del bar"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::If(
+                    vec![(
                         Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Compound(Box::new(
-                              CompoundStatement::If(
-                                  vec![
-                                      (
-                                          Expression::Name("foo".to_string()),
-                                          vec![
-                                              Statement::Del(vec![Expression::Name("bar".to_string())])
-                                          ]
-                                      ),
-                                  ],
-                                  None
-                                )
-                            ))
-                        ]
-                    ),
-                ],
-                None
-            )
-        )));
+                        vec![Statement::Compound(Box::new(CompoundStatement::If(
+                            vec![(
+                                Expression::Name("foo".to_string()),
+                                vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                            )],
+                            None,
+                        )))],
+                    )],
+                    None,
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_dangling_else_1() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar\nelse:\n del qux"), 0), Ok((make_strspan(""),
-            CompoundStatement::If(
-                vec![
-                    (
+        assert_parse_eq(
+            compound_stmt(
+                make_strspan("if foo:\n if foo:\n  del bar\nelse:\n del qux"),
+                0,
+            ),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::If(
+                    vec![(
                         Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Compound(Box::new(
-                              CompoundStatement::If(
-                                  vec![
-                                      (
-                                          Expression::Name("foo".to_string()),
-                                          vec![
-                                              Statement::Del(vec![Expression::Name("bar".to_string())])
-                                          ]
-                                      ),
-                                  ],
-                                  None
-                                )
-                            ))
-                        ]
-                    ),
-                ],
-                Some(
-                    vec![
-                        Statement::Del(vec![Expression::Name("qux".to_string())])
-                    ]
-                )
-            )
-        )));
+                        vec![Statement::Compound(Box::new(CompoundStatement::If(
+                            vec![(
+                                Expression::Name("foo".to_string()),
+                                vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                            )],
+                            None,
+                        )))],
+                    )],
+                    Some(vec![Statement::Del(vec![Expression::Name(
+                        "qux".to_string(),
+                    )])]),
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_dangling_else_2() {
-        assert_parse_eq(compound_stmt(make_strspan("if foo:\n if foo:\n  del bar\n else:\n  del qux"), 0), Ok((make_strspan(""),
-            CompoundStatement::If(
-                vec![
-                    (
+        assert_parse_eq(
+            compound_stmt(
+                make_strspan("if foo:\n if foo:\n  del bar\n else:\n  del qux"),
+                0,
+            ),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::If(
+                    vec![(
                         Expression::Name("foo".to_string()),
-                        vec![
-                            Statement::Compound(Box::new(
-                              CompoundStatement::If(
-                                  vec![
-                                      (
-                                          Expression::Name("foo".to_string()),
-                                          vec![
-                                              Statement::Del(vec![Expression::Name("bar".to_string())])
-                                          ]
-                                      ),
-                                  ],
-                                  Some(
-                                      vec![
-                                          Statement::Del(vec![Expression::Name("qux".to_string())])
-                                      ]
-                                  )
-                                )
-                            ))
-                        ]
-                    ),
-                ],
-                None
-            )
-        )));
+                        vec![Statement::Compound(Box::new(CompoundStatement::If(
+                            vec![(
+                                Expression::Name("foo".to_string()),
+                                vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                            )],
+                            Some(vec![Statement::Del(vec![Expression::Name(
+                                "qux".to_string(),
+                            )])]),
+                        )))],
+                    )],
+                    None,
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_while() {
-        assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar"), 0), Ok((make_strspan(""),
-            CompoundStatement::While(
-                Expression::Name("foo".to_string()),
-                vec![
-                    Statement::Del(vec![Expression::Name("bar".to_string())])
-                ],
-                None
-            )
-        )));
+        assert_parse_eq(
+            compound_stmt(make_strspan("while foo:\n del bar"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::While(
+                    Expression::Name("foo".to_string()),
+                    vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                    None,
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_while_else() {
-        assert_parse_eq(compound_stmt(make_strspan("while foo:\n del bar\nelse:\n del qux"), 0), Ok((make_strspan(""),
-            CompoundStatement::While(
-                Expression::Name("foo".to_string()),
-                vec![
-                    Statement::Del(vec![Expression::Name("bar".to_string())])
-                ],
-                Some(
-                    vec![
-                        Statement::Del(vec![Expression::Name("qux".to_string())])
-                    ]
-                )
-            )
-        )));
+        assert_parse_eq(
+            compound_stmt(make_strspan("while foo:\n del bar\nelse:\n del qux"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::While(
+                    Expression::Name("foo".to_string()),
+                    vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                    Some(vec![Statement::Del(vec![Expression::Name(
+                        "qux".to_string(),
+                    )])]),
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_for() {
-        assert_parse_eq(compound_stmt(make_strspan("for foo in bar:\n del baz"), 0), Ok((make_strspan(""),
-            CompoundStatement::For {
-                async: false,
-                item: vec![Expression::Name("foo".to_string())],
-                iterator: vec![Expression::Name("bar".to_string())],
-                for_block: vec![
-                    Statement::Del(vec![Expression::Name("baz".to_string())])
-                ],
-                else_block: None
-            }
-        )));
+        assert_parse_eq(
+            compound_stmt(make_strspan("for foo in bar:\n del baz"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::For {
+                    async: false,
+                    item: vec![Expression::Name("foo".to_string())],
+                    iterator: vec![Expression::Name("bar".to_string())],
+                    for_block: vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                    else_block: None,
+                },
+            )),
+        );
     }
 
     #[test]
     fn test_for_else() {
-        assert_parse_eq(compound_stmt(make_strspan("for foo in bar:\n del baz\nelse:\n del qux"), 0), Ok((make_strspan(""),
-            CompoundStatement::For {
-                async: false,
-                item: vec![Expression::Name("foo".to_string())],
-                iterator: vec![Expression::Name("bar".to_string())],
-                for_block: vec![
-                    Statement::Del(vec![Expression::Name("baz".to_string())])
-                ],
-                else_block: Some(
-                    vec![
-                        Statement::Del(vec![Expression::Name("qux".to_string())])
-                    ]
-                )
-            }
-        )));
+        assert_parse_eq(
+            compound_stmt(
+                make_strspan("for foo in bar:\n del baz\nelse:\n del qux"),
+                0,
+            ),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::For {
+                    async: false,
+                    item: vec![Expression::Name("foo".to_string())],
+                    iterator: vec![Expression::Name("bar".to_string())],
+                    for_block: vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                    else_block: Some(vec![Statement::Del(vec![Expression::Name(
+                        "qux".to_string(),
+                    )])]),
+                },
+            )),
+        );
     }
 
     #[test]
     fn test_raise() {
-        assert_parse_eq(small_stmt(make_strspan("raise")), Ok((make_strspan(""),
-            Statement::Raise
-        )));
+        assert_parse_eq(
+            small_stmt(make_strspan("raise")),
+            Ok((make_strspan(""), Statement::Raise)),
+        );
 
-        assert_parse_eq(small_stmt(make_strspan("raise exc")), Ok((make_strspan(""),
-            Statement::RaiseExc(
-                Expression::Name("exc".to_string()),
-            )
-        )));
+        assert_parse_eq(
+            small_stmt(make_strspan("raise exc")),
+            Ok((
+                make_strspan(""),
+                Statement::RaiseExc(Expression::Name("exc".to_string())),
+            )),
+        );
 
-        assert_parse_eq(small_stmt(make_strspan("raise exc from exc2")), Ok((make_strspan(""),
-            Statement::RaiseExcFrom(
-                Expression::Name("exc".to_string()),
-                Expression::Name("exc2".to_string()),
-            )
-        )));
+        assert_parse_eq(
+            small_stmt(make_strspan("raise exc from exc2")),
+            Ok((
+                make_strspan(""),
+                Statement::RaiseExcFrom(
+                    Expression::Name("exc".to_string()),
+                    Expression::Name("exc2".to_string()),
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_assign() {
-        assert_parse_eq(small_stmt(make_strspan("foo = bar")), Ok((make_strspan(""),
-            Statement::Assignment(
-                vec![
-                    Expression::Name("foo".to_string()),
-                ],
-                vec![
-                    vec![
-                        Expression::Name("bar".to_string()),
-                    ],
-                ],
-            )
-        )));
+        assert_parse_eq(
+            small_stmt(make_strspan("foo = bar")),
+            Ok((
+                make_strspan(""),
+                Statement::Assignment(
+                    vec![Expression::Name("foo".to_string())],
+                    vec![vec![Expression::Name("bar".to_string())]],
+                ),
+            )),
+        );
 
-        assert_parse_eq(small_stmt(make_strspan("foo = bar = baz")), Ok((make_strspan(""),
-            Statement::Assignment(
-                vec![
-                    Expression::Name("foo".to_string()),
-                ],
-                vec![
+        assert_parse_eq(
+            small_stmt(make_strspan("foo = bar = baz")),
+            Ok((
+                make_strspan(""),
+                Statement::Assignment(
+                    vec![Expression::Name("foo".to_string())],
                     vec![
-                        Expression::Name("bar".to_string()),
+                        vec![Expression::Name("bar".to_string())],
+                        vec![Expression::Name("baz".to_string())],
                     ],
-                    vec![
-                        Expression::Name("baz".to_string()),
-                    ],
-                ],
-            )
-        )));
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_typeannotation() {
-        assert_parse_eq(small_stmt(make_strspan("foo: bar")), Ok((make_strspan(""),
-            Statement::TypeAnnotation(
-                vec![
-                    Expression::Name("foo".to_string()),
-                ],
-                Expression::Name("bar".to_string()),
-            )
-        )));
+        assert_parse_eq(
+            small_stmt(make_strspan("foo: bar")),
+            Ok((
+                make_strspan(""),
+                Statement::TypeAnnotation(
+                    vec![Expression::Name("foo".to_string())],
+                    Expression::Name("bar".to_string()),
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_augassign() {
-        assert_parse_eq(small_stmt(make_strspan("foo:bar = baz")), Ok((make_strspan(""),
-            Statement::TypedAssignment(
-                vec![
-                    Expression::Name("foo".to_string()),
-                ],
-                Expression::Name("bar".to_string()),
-                vec![
-                    Expression::Name("baz".to_string()),
-                ],
-            )
-        )));
+        assert_parse_eq(
+            small_stmt(make_strspan("foo:bar = baz")),
+            Ok((
+                make_strspan(""),
+                Statement::TypedAssignment(
+                    vec![Expression::Name("foo".to_string())],
+                    Expression::Name("bar".to_string()),
+                    vec![Expression::Name("baz".to_string())],
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_unpack_assign() {
-        assert_parse_eq(small_stmt(make_strspan("foo, bar = baz, qux")), Ok((make_strspan(""),
-            Statement::Assignment(
-                vec![
-                    Expression::Name("foo".to_string()),
-                    Expression::Name("bar".to_string()),
-                ],
-                vec![
+        assert_parse_eq(
+            small_stmt(make_strspan("foo, bar = baz, qux")),
+            Ok((
+                make_strspan(""),
+                Statement::Assignment(
                     vec![
-                        Expression::Name("baz".to_string()),
-                        Expression::Name("qux".to_string()),
-                    ],
-                ],
-            )
-        )));
-
-        assert_parse_eq(small_stmt(make_strspan("foo = bar = baz")), Ok((make_strspan(""),
-            Statement::Assignment(
-                vec![
-                    Expression::Name("foo".to_string()),
-                ],
-                vec![
-                    vec![
+                        Expression::Name("foo".to_string()),
                         Expression::Name("bar".to_string()),
                     ],
-                    vec![
+                    vec![vec![
                         Expression::Name("baz".to_string()),
+                        Expression::Name("qux".to_string()),
+                    ]],
+                ),
+            )),
+        );
+
+        assert_parse_eq(
+            small_stmt(make_strspan("foo = bar = baz")),
+            Ok((
+                make_strspan(""),
+                Statement::Assignment(
+                    vec![Expression::Name("foo".to_string())],
+                    vec![
+                        vec![Expression::Name("bar".to_string())],
+                        vec![Expression::Name("baz".to_string())],
                     ],
-                ],
-            )
-        )));
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_with() {
-        assert_parse_eq(with_stmt(make_strspan("with foo:\n del bar"), 0), Ok((make_strspan(""),
-            CompoundStatement::With(
-                vec![
-                    (Expression::Name("foo".to_string()), None),
-                ],
-                vec![
-                    Statement::Del(vec![Expression::Name("bar".to_string())])
-                ],
-            )
-        )));
+        assert_parse_eq(
+            with_stmt(make_strspan("with foo:\n del bar"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::With(
+                    vec![(Expression::Name("foo".to_string()), None)],
+                    vec![Statement::Del(vec![Expression::Name("bar".to_string())])],
+                ),
+            )),
+        );
 
-        assert_parse_eq(with_stmt(make_strspan("with foo as bar:\n del baz"), 0), Ok((make_strspan(""),
-            CompoundStatement::With(
-                vec![
-                    (Expression::Name("foo".to_string()), Some(Expression::Name("bar".to_string()))),
-                ],
-                vec![
-                    Statement::Del(vec![Expression::Name("baz".to_string())])
-                ],
-            )
-        )));
+        assert_parse_eq(
+            with_stmt(make_strspan("with foo as bar:\n del baz"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::With(
+                    vec![(
+                        Expression::Name("foo".to_string()),
+                        Some(Expression::Name("bar".to_string())),
+                    )],
+                    vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                ),
+            )),
+        );
     }
 
     #[test]
     fn test_try() {
-        assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nexcept Bar:\n del baz"), 0), Ok((make_strspan(""),
-            CompoundStatement::Try(Try {
-                try_block: vec![
-                    Statement::Del(vec![Expression::Name("foo".to_string())]),
-                ],
-                except_clauses: vec![
-                    (
+        assert_parse_eq(
+            try_stmt(make_strspan("try:\n del foo\nexcept Bar:\n del baz"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::Try(Try {
+                    try_block: vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+                    except_clauses: vec![(
                         Expression::Name("Bar".to_string()),
                         None,
                         vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
-                    ),
-                ],
-                last_except: vec![],
-                else_block: vec![],
-                finally_block: vec![],
-            })
-        )));
+                    )],
+                    last_except: vec![],
+                    else_block: vec![],
+                    finally_block: vec![],
+                }),
+            )),
+        );
 
-        assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nexcept:\n del baz"), 0), Ok((make_strspan(""),
-            CompoundStatement::Try(Try {
-                try_block: vec![
-                    Statement::Del(vec![Expression::Name("foo".to_string())]),
-                ],
-                except_clauses: vec![],
-                last_except: vec![
-                    Statement::Del(vec![Expression::Name("baz".to_string())]),
-                ],
-                else_block: vec![],
-                finally_block: vec![],
-            })
-        )));
+        assert_parse_eq(
+            try_stmt(make_strspan("try:\n del foo\nexcept:\n del baz"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::Try(Try {
+                    try_block: vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+                    except_clauses: vec![],
+                    last_except: vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                    else_block: vec![],
+                    finally_block: vec![],
+                }),
+            )),
+        );
 
-        assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nelse:\n del baz"), 0), Ok((make_strspan(""),
-            CompoundStatement::Try(Try {
-                try_block: vec![
-                    Statement::Del(vec![Expression::Name("foo".to_string())]),
-                ],
-                except_clauses: vec![],
-                last_except: vec![],
-                else_block: vec![
-                    Statement::Del(vec![Expression::Name("baz".to_string())]),
-                ],
-                finally_block: vec![],
-            })
-        )));
+        assert_parse_eq(
+            try_stmt(make_strspan("try:\n del foo\nelse:\n del baz"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::Try(Try {
+                    try_block: vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+                    except_clauses: vec![],
+                    last_except: vec![],
+                    else_block: vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                    finally_block: vec![],
+                }),
+            )),
+        );
 
-        assert_parse_eq(try_stmt(make_strspan("try:\n del foo\nfinally:\n del baz"), 0), Ok((make_strspan(""),
-            CompoundStatement::Try(Try {
-                try_block: vec![
-                    Statement::Del(vec![Expression::Name("foo".to_string())]),
-                ],
-                except_clauses: vec![],
-                last_except: vec![],
-                else_block: vec![],
-                finally_block: vec![
-                    Statement::Del(vec![Expression::Name("baz".to_string())]),
-                ],
-            })
-        )));
+        assert_parse_eq(
+            try_stmt(make_strspan("try:\n del foo\nfinally:\n del baz"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::Try(Try {
+                    try_block: vec![Statement::Del(vec![Expression::Name("foo".to_string())])],
+                    except_clauses: vec![],
+                    last_except: vec![],
+                    else_block: vec![],
+                    finally_block: vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                }),
+            )),
+        );
     }
 
     #[test]
     fn test_import() {
-        assert_parse_eq(statement(make_strspan("import foo"), 0), Ok((make_strspan(""),
-            vec![Statement::Import(Import::Import {
-                names: vec![(vec!["foo".to_string()], None)],
-            })]
-        )));
+        assert_parse_eq(
+            statement(make_strspan("import foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Import(Import::Import {
+                    names: vec![(vec!["foo".to_string()], None)],
+                })],
+            )),
+        );
     }
 
     #[test]
-    fn test_import_from () {
-        assert_parse_eq(statement(make_strspan("from . import foo"), 0), Ok((make_strspan(""),
-            vec![Statement::Import(Import::ImportFrom {
-                leading_dots: 1,
-                path: vec![],
-                names: vec![("foo".to_string(), None)],
-            })]
-        )));
+    fn test_import_from() {
+        assert_parse_eq(
+            statement(make_strspan("from . import foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Import(Import::ImportFrom {
+                    leading_dots: 1,
+                    path: vec![],
+                    names: vec![("foo".to_string(), None)],
+                })],
+            )),
+        );
 
-        assert_parse_eq(statement(make_strspan("from . import foo as bar"), 0), Ok((make_strspan(""),
-            vec![Statement::Import(Import::ImportFrom {
-                leading_dots: 1,
-                path: vec![],
-                names: vec![("foo".to_string(), Some("bar".to_string()))],
-            })]
-        )));
+        assert_parse_eq(
+            statement(make_strspan("from . import foo as bar"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Import(Import::ImportFrom {
+                    leading_dots: 1,
+                    path: vec![],
+                    names: vec![("foo".to_string(), Some("bar".to_string()))],
+                })],
+            )),
+        );
 
-        assert_parse_eq(statement(make_strspan("from qux import foo"), 0), Ok((make_strspan(""),
-            vec![Statement::Import(Import::ImportFrom {
-                leading_dots: 0,
-                path: vec!["qux".to_string()],
-                names: vec![("foo".to_string(), None)],
-            })]
-        )));
+        assert_parse_eq(
+            statement(make_strspan("from qux import foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Import(Import::ImportFrom {
+                    leading_dots: 0,
+                    path: vec!["qux".to_string()],
+                    names: vec![("foo".to_string(), None)],
+                })],
+            )),
+        );
 
-        assert_parse_eq(statement(make_strspan("from qux import foo as bar"), 0), Ok((make_strspan(""),
-            vec![Statement::Import(Import::ImportFrom {
-                leading_dots: 0,
-                path: vec!["qux".to_string()],
-                names: vec![("foo".to_string(), Some("bar".to_string()))],
-            })]
-        )));
+        assert_parse_eq(
+            statement(make_strspan("from qux import foo as bar"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Import(Import::ImportFrom {
+                    leading_dots: 0,
+                    path: vec!["qux".to_string()],
+                    names: vec![("foo".to_string(), Some("bar".to_string()))],
+                })],
+            )),
+        );
 
-        assert_parse_eq(statement(make_strspan("from .qux import foo"), 0), Ok((make_strspan(""),
-            vec![Statement::Import(Import::ImportFrom {
-                leading_dots: 1,
-                path: vec!["qux".to_string()],
-                names: vec![("foo".to_string(), None)],
-            })]
-        )));
+        assert_parse_eq(
+            statement(make_strspan("from .qux import foo"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Import(Import::ImportFrom {
+                    leading_dots: 1,
+                    path: vec!["qux".to_string()],
+                    names: vec![("foo".to_string(), None)],
+                })],
+            )),
+        );
 
-        assert_parse_eq(statement(make_strspan("from .qux import foo as bar"), 0), Ok((make_strspan(""),
-            vec![Statement::Import(Import::ImportFrom {
-                leading_dots: 1,
-                path: vec!["qux".to_string()],
-                names: vec![("foo".to_string(), Some("bar".to_string()))],
-            })]
-        )));
+        assert_parse_eq(
+            statement(make_strspan("from .qux import foo as bar"), 0),
+            Ok((
+                make_strspan(""),
+                vec![Statement::Import(Import::ImportFrom {
+                    leading_dots: 1,
+                    path: vec!["qux".to_string()],
+                    names: vec![("foo".to_string(), Some("bar".to_string()))],
+                })],
+            )),
+        );
     }
 }

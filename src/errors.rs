@@ -14,23 +14,25 @@ impl From<PyParseError> for u32 {
 #[cfg(test)]
 mod tests {
     use nom;
-    use nom::{Context, ErrorKind};
     use nom::types::CompleteStr;
+    use nom::{Context, ErrorKind};
     use nom_locate::LocatedSpan;
 
     use helpers::*;
     use statements::statement;
 
-
     #[test]
     fn if_no_condition() {
-        assert_eq!(statement(make_strspan("if:\n foo"), 0), Err(
-            nom::Err::Failure(
-                Context::Code(
-                    LocatedSpan { offset: 2, line: 1, fragment: CompleteStr(":\n foo") },
-                    ErrorKind::Alt
-                )
-            )
-        ));
+        assert_eq!(
+            statement(make_strspan("if:\n foo"), 0),
+            Err(nom::Err::Failure(Context::Code(
+                LocatedSpan {
+                    offset: 2,
+                    line: 1,
+                    fragment: CompleteStr(":\n foo")
+                },
+                ErrorKind::Alt
+            )))
+        );
     }
 }

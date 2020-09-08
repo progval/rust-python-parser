@@ -1,10 +1,10 @@
 use std::str::FromStr;
 
-#[cfg(feature="bigint")]
+#[cfg(feature = "bigint")]
 use num_traits::Num;
 
-use helpers::StrSpan;
 use ast::*;
+use helpers::StrSpan;
 
 named!(decimal_string<StrSpan, String>,
   map!(recognize!(tuple!(one_of!("0123456789"), many0!(one_of!("_0123456789")))), |s:StrSpan| str::replace(&s.fragment.0, "_", ""))
@@ -79,81 +79,137 @@ named!(pub number<StrSpan, Expression>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use helpers::{make_strspan, assert_parse_eq};
+    use helpers::{assert_parse_eq, make_strspan};
 
     #[test]
     fn integer() {
-        assert_parse_eq(number(make_strspan("0")), Ok((make_strspan(""),
-            Expression::Int(0u32.into()))));
-        assert_parse_eq(number(make_strspan("0000_000_0")), Ok((make_strspan(""),
-            Expression::Int(0u32.into()))));
-        assert_parse_eq(number(make_strspan("12345")), Ok((make_strspan(""),
-            Expression::Int(12345u32.into()))));
-        assert_parse_eq(number(make_strspan("0b101010")), Ok((make_strspan(""),
-            Expression::Int(42u32.into()))));
-        assert_parse_eq(number(make_strspan("0x2a")), Ok((make_strspan(""),
-            Expression::Int(42u32.into()))));
-        assert_parse_eq(number(make_strspan("0o52")), Ok((make_strspan(""),
-            Expression::Int(42u32.into()))));
+        assert_parse_eq(
+            number(make_strspan("0")),
+            Ok((make_strspan(""), Expression::Int(0u32.into()))),
+        );
+        assert_parse_eq(
+            number(make_strspan("0000_000_0")),
+            Ok((make_strspan(""), Expression::Int(0u32.into()))),
+        );
+        assert_parse_eq(
+            number(make_strspan("12345")),
+            Ok((make_strspan(""), Expression::Int(12345u32.into()))),
+        );
+        assert_parse_eq(
+            number(make_strspan("0b101010")),
+            Ok((make_strspan(""), Expression::Int(42u32.into()))),
+        );
+        assert_parse_eq(
+            number(make_strspan("0x2a")),
+            Ok((make_strspan(""), Expression::Int(42u32.into()))),
+        );
+        assert_parse_eq(
+            number(make_strspan("0o52")),
+            Ok((make_strspan(""), Expression::Int(42u32.into()))),
+        );
     }
 
     #[test]
     fn imag_integer() {
-        assert_parse_eq(number(make_strspan("0j")), Ok((make_strspan(""),
-            Expression::ImaginaryInt(0u32.into()))));
-        assert_parse_eq(number(make_strspan("0000_000_0j")), Ok((make_strspan(""),
-            Expression::ImaginaryInt(0u32.into()))));
-        assert_parse_eq(number(make_strspan("12345j")), Ok((make_strspan(""),
-            Expression::ImaginaryInt(12345u32.into()))));
+        assert_parse_eq(
+            number(make_strspan("0j")),
+            Ok((make_strspan(""), Expression::ImaginaryInt(0u32.into()))),
+        );
+        assert_parse_eq(
+            number(make_strspan("0000_000_0j")),
+            Ok((make_strspan(""), Expression::ImaginaryInt(0u32.into()))),
+        );
+        assert_parse_eq(
+            number(make_strspan("12345j")),
+            Ok((make_strspan(""), Expression::ImaginaryInt(12345u32.into()))),
+        );
     }
 
     #[test]
     fn float() {
-        assert_parse_eq(number(make_strspan(".42")), Ok((make_strspan(""),
-            Expression::Float(0.42))));
-        assert_parse_eq(number(make_strspan("41.43")), Ok((make_strspan(""),
-            Expression::Float(41.43))));
-        assert_parse_eq(number(make_strspan("42.")), Ok((make_strspan(""),
-            Expression::Float(42.))));
-        assert_parse_eq(number(make_strspan("6.0")), Ok((make_strspan(""),
-            Expression::Float(6.))));
+        assert_parse_eq(
+            number(make_strspan(".42")),
+            Ok((make_strspan(""), Expression::Float(0.42))),
+        );
+        assert_parse_eq(
+            number(make_strspan("41.43")),
+            Ok((make_strspan(""), Expression::Float(41.43))),
+        );
+        assert_parse_eq(
+            number(make_strspan("42.")),
+            Ok((make_strspan(""), Expression::Float(42.))),
+        );
+        assert_parse_eq(
+            number(make_strspan("6.0")),
+            Ok((make_strspan(""), Expression::Float(6.))),
+        );
 
-        assert_parse_eq(number(make_strspan(".42e10")), Ok((make_strspan(""),
-            Expression::Float(0.42e10))));
-        assert_parse_eq(number(make_strspan(".42e+10")), Ok((make_strspan(""),
-            Expression::Float(0.42e10))));
-        assert_parse_eq(number(make_strspan(".42e-10")), Ok((make_strspan(""),
-            Expression::Float(0.42e-10))));
+        assert_parse_eq(
+            number(make_strspan(".42e10")),
+            Ok((make_strspan(""), Expression::Float(0.42e10))),
+        );
+        assert_parse_eq(
+            number(make_strspan(".42e+10")),
+            Ok((make_strspan(""), Expression::Float(0.42e10))),
+        );
+        assert_parse_eq(
+            number(make_strspan(".42e-10")),
+            Ok((make_strspan(""), Expression::Float(0.42e-10))),
+        );
 
-        assert_parse_eq(number(make_strspan("41.43e10")), Ok((make_strspan(""),
-            Expression::Float(41.43e10))));
-        assert_parse_eq(number(make_strspan("41.43e+10")), Ok((make_strspan(""),
-            Expression::Float(41.43e10))));
-        assert_parse_eq(number(make_strspan("41.43e-10")), Ok((make_strspan(""),
-            Expression::Float(41.43e-10))));
+        assert_parse_eq(
+            number(make_strspan("41.43e10")),
+            Ok((make_strspan(""), Expression::Float(41.43e10))),
+        );
+        assert_parse_eq(
+            number(make_strspan("41.43e+10")),
+            Ok((make_strspan(""), Expression::Float(41.43e10))),
+        );
+        assert_parse_eq(
+            number(make_strspan("41.43e-10")),
+            Ok((make_strspan(""), Expression::Float(41.43e-10))),
+        );
     }
 
     #[test]
     fn imag_float() {
-        assert_parse_eq(number(make_strspan(".42j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(0.42))));
-        assert_parse_eq(number(make_strspan("41.43j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(41.43))));
-        assert_parse_eq(number(make_strspan("42.j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(42.))));
+        assert_parse_eq(
+            number(make_strspan(".42j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(0.42))),
+        );
+        assert_parse_eq(
+            number(make_strspan("41.43j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(41.43))),
+        );
+        assert_parse_eq(
+            number(make_strspan("42.j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(42.))),
+        );
 
-        assert_parse_eq(number(make_strspan(".42e10j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(0.42e10))));
-        assert_parse_eq(number(make_strspan(".42e+10j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(0.42e10))));
-        assert_parse_eq(number(make_strspan(".42e-10j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(0.42e-10))));
+        assert_parse_eq(
+            number(make_strspan(".42e10j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(0.42e10))),
+        );
+        assert_parse_eq(
+            number(make_strspan(".42e+10j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(0.42e10))),
+        );
+        assert_parse_eq(
+            number(make_strspan(".42e-10j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(0.42e-10))),
+        );
 
-        assert_parse_eq(number(make_strspan("41.43e10j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(41.43e10))));
-        assert_parse_eq(number(make_strspan("41.43e+10j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(41.43e10))));
-        assert_parse_eq(number(make_strspan("41.43e-10j")), Ok((make_strspan(""),
-            Expression::ImaginaryFloat(41.43e-10))));
+        assert_parse_eq(
+            number(make_strspan("41.43e10j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(41.43e10))),
+        );
+        assert_parse_eq(
+            number(make_strspan("41.43e+10j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(41.43e10))),
+        );
+        assert_parse_eq(
+            number(make_strspan("41.43e-10j")),
+            Ok((make_strspan(""), Expression::ImaginaryFloat(41.43e-10))),
+        );
     }
 }

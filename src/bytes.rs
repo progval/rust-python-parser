@@ -58,7 +58,6 @@ named_args!(longbytes(quote: char) <StrSpan, Vec<u8>>,
   )
 );
 
-
 named_args!(shortrawbytes(quote: char) <StrSpan, Vec<u8>>,
   fold_many0!(
     alt!(
@@ -88,7 +87,6 @@ named_args!(longrawbytes(quote: char) <StrSpan, Vec<u8>>,
     }
   )
 );
-
 
 named!(pub bytes<StrSpan, Vec<u8>>,
   do_parse!(

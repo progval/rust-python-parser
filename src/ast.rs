@@ -2,25 +2,25 @@
 
 use std::fmt;
 
-#[cfg(feature="bigint")]
+#[cfg(feature = "bigint")]
 use num_bigint::BigUint;
 
-#[cfg(feature="wtf8")]
+#[cfg(feature = "wtf8")]
 use wtf8;
 
-#[cfg(feature="bigint")]
+#[cfg(feature = "bigint")]
 pub type IntegerType = BigUint;
-#[cfg(not(feature="bigint"))]
+#[cfg(not(feature = "bigint"))]
 pub type IntegerType = u64;
 
-#[cfg(feature="wtf8")]
+#[cfg(feature = "wtf8")]
 pub type PyStringContent = wtf8::Wtf8Buf;
-#[cfg(feature="wtf8")]
+#[cfg(feature = "wtf8")]
 pub type PyStringCodePoint = wtf8::CodePoint;
 
-#[cfg(not(feature="wtf8"))]
+#[cfg(not(feature = "wtf8"))]
 pub type PyStringContent = String;
-#[cfg(not(feature="wtf8"))]
+#[cfg(not(feature = "wtf8"))]
 pub type PyStringCodePoint = char;
 
 pub type Name = String;
@@ -43,7 +43,7 @@ impl<T> Default for StarParams<T> {
 }
 
 /// The list of parameters of a function definition.
-#[derive(Clone, Debug, PartialEq, Default,)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct TypedArgsList {
     pub positional_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
     pub star_args: StarParams<(Name, Option<Expression>)>,
@@ -99,12 +99,16 @@ pub enum Uop {
 
 impl fmt::Display for Uop {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", match *self {
-            Uop::Plus => "+",
-            Uop::Minus => "-",
-            Uop::Invert => "~",
-            Uop::Not => "not ",
-        })
+        write!(
+            f,
+            "{}",
+            match *self {
+                Uop::Plus => "+",
+                Uop::Minus => "-",
+                Uop::Invert => "~",
+                Uop::Not => "not ",
+            }
+        )
     }
 }
 
@@ -144,33 +148,37 @@ pub enum Bop {
 
 impl fmt::Display for Bop {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", match *self {
-            Bop::Add => "+",
-            Bop::Sub => "-",
-            Bop::Mult => "*",
-            Bop::Matmult => "@",
-            Bop::Mod => "%",
-            Bop::Floordiv => "//",
-            Bop::Div => "/",
-            Bop::Power => "**",
-            Bop::Lshift => "<<",
-            Bop::Rshift => ">>",
-            Bop::BitAnd => "&",
-            Bop::BitXor => "^",
-            Bop::BitOr => "|",
-            Bop::Lt => "<",
-            Bop::Gt => ">",
-            Bop::Eq => "==",
-            Bop::Leq => "<=",
-            Bop::Geq => ">=",
-            Bop::Neq => "!=",
-            Bop::In => " in ",
-            Bop::NotIn => " not in ",
-            Bop::Is => " is ",
-            Bop::IsNot => " is not ",
-            Bop::And => " and ",
-            Bop::Or => " or ",
-        })
+        write!(
+            f,
+            "{}",
+            match *self {
+                Bop::Add => "+",
+                Bop::Sub => "-",
+                Bop::Mult => "*",
+                Bop::Matmult => "@",
+                Bop::Mod => "%",
+                Bop::Floordiv => "//",
+                Bop::Div => "/",
+                Bop::Power => "**",
+                Bop::Lshift => "<<",
+                Bop::Rshift => ">>",
+                Bop::BitAnd => "&",
+                Bop::BitXor => "^",
+                Bop::BitOr => "|",
+                Bop::Lt => "<",
+                Bop::Gt => ">",
+                Bop::Eq => "==",
+                Bop::Leq => "<=",
+                Bop::Geq => ">=",
+                Bop::Neq => "!=",
+                Bop::In => " in ",
+                Bop::NotIn => " not in ",
+                Bop::Is => " is ",
+                Bop::IsNot => " is not ",
+                Bop::And => " and ",
+                Bop::Or => " or ",
+            }
+        )
     }
 }
 
@@ -178,8 +186,14 @@ impl fmt::Display for Bop {
 /// generator expression.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ComprehensionChunk {
-    If { cond: Expression },
-    For { async: bool, item: Vec<Expression>, iterator: Expression },
+    If {
+        cond: Expression,
+    },
+    For {
+        async: bool,
+        item: Vec<Expression>,
+        iterator: Expression,
+    },
 }
 
 /// `**foo` or `foo:bar`, as in a dict comprehension.
@@ -259,7 +273,7 @@ pub enum Import {
         path: Vec<Name>,
         /// For `from x import y, z`, this `vec![(y, None), (vec![z], None)]`.
         /// For `from x import y as z`, this `vec![(y, Some(z))]`.
-        names: Vec<(Name, Option<Name>)>
+        names: Vec<(Name, Option<Name>)>,
     },
     /// For `from x import *`, this is `vec![]`.
     ImportStarFrom {
@@ -268,7 +282,9 @@ pub enum Import {
     },
     /// `import x.y as z, foo.bar` is
     /// `Import::Import(vec![(vec![x, y], Some(z)), (vec![foo, bar], None)])`.
-    Import { names: Vec<(Vec<Name>, Option<Name>)> },
+    Import {
+        names: Vec<(Vec<Name>, Option<Name>)>,
+    },
 }
 
 /// `+=` and its friends.
@@ -291,21 +307,25 @@ pub enum AugAssignOp {
 
 impl fmt::Display for AugAssignOp {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "{}", match *self {
-            AugAssignOp::Add => "+=",
-            AugAssignOp::Sub => "-=",
-            AugAssignOp::Mult => "*=",
-            AugAssignOp::MatMult => "@=",
-            AugAssignOp::Div => "/=",
-            AugAssignOp::Mod => "%=",
-            AugAssignOp::BitAnd => "&=",
-            AugAssignOp::BitOr => "|=",
-            AugAssignOp::BitXor => "^=",
-            AugAssignOp::Lshift => "<<=",
-            AugAssignOp::Rshift => ">>=",
-            AugAssignOp::Power => "**=",
-            AugAssignOp::Floordiv => "//=",
-        })
+        write!(
+            f,
+            "{}",
+            match *self {
+                AugAssignOp::Add => "+=",
+                AugAssignOp::Sub => "-=",
+                AugAssignOp::Mult => "*=",
+                AugAssignOp::MatMult => "@=",
+                AugAssignOp::Div => "/=",
+                AugAssignOp::Mod => "%=",
+                AugAssignOp::BitAnd => "&=",
+                AugAssignOp::BitOr => "|=",
+                AugAssignOp::BitXor => "^=",
+                AugAssignOp::Lshift => "<<=",
+                AugAssignOp::Rshift => ">>=",
+                AugAssignOp::Power => "**=",
+                AugAssignOp::Floordiv => "//=",
+            }
+        )
     }
 }
 
@@ -375,7 +395,13 @@ pub struct Try {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompoundStatement {
     If(Vec<(Expression, Vec<Statement>)>, Option<Vec<Statement>>),
-    For { async: bool, item: Vec<Expression>, iterator: Vec<Expression>, for_block: Vec<Statement>, else_block: Option<Vec<Statement>> },
+    For {
+        async: bool,
+        item: Vec<Expression>,
+        iterator: Vec<Expression>,
+        for_block: Vec<Statement>,
+        else_block: Option<Vec<Statement>>,
+    },
     While(Expression, Vec<Statement>, Option<Vec<Statement>>),
     With(Vec<(Expression, Option<Expression>)>, Vec<Statement>),
     Funcdef(Funcdef),
