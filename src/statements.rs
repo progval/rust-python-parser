@@ -426,7 +426,7 @@ named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
     spaces_nonl >>
     item: call!(ExpressionParser::<NewlinesAreNotSpaces>::exprlist) >>
     ws_nonl!(keyword!("in")) >>
-    iterator: call!(ExpressionParser::<NewlinesAreNotSpaces>::exprlist) >>
+    iterator: call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist) >>
     spaces_nonl >>
     ws_nonl!(char!(':')) >>
     for_block: call!(block, indent) >>
@@ -959,6 +959,27 @@ mod tests {
                     item: vec![Expression::Name("foo".to_string())],
                     iterator: vec![Expression::Name("bar".to_string())],
                     for_block: vec![Statement::Del(vec![Expression::Name("baz".to_string())])],
+                    else_block: None,
+                },
+            )),
+        );
+    }
+
+    #[test]
+    fn test_for_in_ternary() {
+        assert_parse_eq(
+            compound_stmt(make_strspan("for foo in bar if baz else qux:\n pass"), 0),
+            Ok((
+                make_strspan(""),
+                CompoundStatement::For {
+                    async: false,
+                    item: vec![Expression::Name("foo".to_string())],
+                    iterator: vec![Expression::Ternary(
+                        Box::new(Expression::Name("bar".to_string())),
+                        Box::new(Expression::Name("baz".to_string())),
+                        Box::new(Expression::Name("qux".to_string())),
+                    )],
+                    for_block: vec![Statement::Pass],
                     else_block: None,
                 },
             )),
