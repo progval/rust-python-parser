@@ -2,9 +2,13 @@
 
 work in progress
 
+Support for 3.8 syntax
+
 Breaking changes:
 
 * Added `Expression::Await` variant
+* Added `Expression::Named` variant
+* Changed TypedArgsList and UntypedArgsList to add `posonly_args` field, and rename `positional_args` to `args`
 
 Other changes
 

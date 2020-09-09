@@ -376,14 +376,20 @@ fn format_args(args: &Vec<Argument>) -> String {
 
 fn format_typed_params(param: &TypedArgsList) -> String {
     let TypedArgsList {
-        ref positional_args,
+        ref posonly_args,
+        ref args,
         ref star_args,
         ref keyword_args,
         ref star_kwargs,
     } = *param;
     let mut chunks = Vec::new();
 
-    chunks.extend(positional_args.iter().map(format_typed_param));
+    if posonly_args.len() > 0 {
+        chunks.extend(posonly_args.iter().map(format_typed_param));
+        chunks.push("/".to_string());
+    }
+
+    chunks.extend(args.iter().map(format_typed_param));
 
     match *star_args {
         StarParams::No => (),
@@ -423,7 +429,8 @@ fn format_typed_param(param: &(Name, Option<Expression>, Option<Expression>)) ->
 
 fn format_untyped_params(param: &UntypedArgsList) -> String {
     let UntypedArgsList {
-        ref positional_args,
+        ref posonly_args,
+        ref args,
         ref star_args,
         ref keyword_args,
         ref star_kwargs,
@@ -431,7 +438,12 @@ fn format_untyped_params(param: &UntypedArgsList) -> String {
 
     let mut chunks = Vec::new();
 
-    chunks.extend(positional_args.iter().map(format_untyped_param));
+    if posonly_args.len() > 0 {
+        chunks.extend(posonly_args.iter().map(format_untyped_param));
+        chunks.push("/".to_string());
+    }
+
+    chunks.extend(args.iter().map(format_untyped_param));
 
     match *star_args {
         StarParams::No => (),

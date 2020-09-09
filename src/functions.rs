@@ -109,7 +109,8 @@ trait IsItTyped {
     }
 
     fn make_list(
-        positional_args: Vec<(Self::Return, Option<Box<Expression>>)>,
+        posonly_args: Vec<(Self::Return, Option<Box<Expression>>)>,
+        pos_args: Vec<(Self::Return, Option<Box<Expression>>)>,
         star_args: Option<Option<Self::Return>>,
         keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>,
         star_kwargs: Option<Self::Return>,
@@ -129,14 +130,19 @@ impl IsItTyped for Typed {
     );
 
     fn make_list(
-        positional_args: Vec<(Self::Return, Option<Box<Expression>>)>,
+        posonly_args: Vec<(Self::Return, Option<Box<Expression>>)>,
+        args: Vec<(Self::Return, Option<Box<Expression>>)>,
         star_args: Option<Option<Self::Return>>,
         keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>,
         star_kwargs: Option<Self::Return>,
     ) -> Self::List {
         let deref_option = |o: Option<Box<_>>| o.map(|v| *v);
         TypedArgsList {
-            positional_args: positional_args
+            posonly_args: posonly_args
+                .into_iter()
+                .map(|((name, typed), value)| (name, deref_option(typed), deref_option(value)))
+                .collect(),
+            args: args
                 .into_iter()
                 .map(|((name, typed), value)| (name, deref_option(typed), deref_option(value)))
                 .collect(),
@@ -165,14 +171,19 @@ impl IsItTyped for Untyped {
     );
 
     fn make_list(
-        positional_args: Vec<(Self::Return, Option<Box<Expression>>)>,
+        posonly_args: Vec<(Self::Return, Option<Box<Expression>>)>,
+        args: Vec<(Self::Return, Option<Box<Expression>>)>,
         star_args: Option<Option<Self::Return>>,
         keyword_args: Vec<(Self::Return, Option<Box<Expression>>)>,
         star_kwargs: Option<Self::Return>,
     ) -> Self::List {
         let deref_option = |o: Option<Box<_>>| o.map(|v| *v);
         UntypedArgsList {
-            positional_args: positional_args
+            posonly_args: posonly_args
+                .into_iter()
+                .map(|(name, value)| (name, deref_option(value)))
+                .collect(),
+            args: args
                 .into_iter()
                 .map(|(name, value)| (name, deref_option(value)))
                 .collect(),
@@ -195,15 +206,27 @@ named!(parameters<StrSpan, TypedArgsList>,
   map!(delimited!(char!('('), opt!(ws_comm!(typedargslist)), char!(')')), |o| o.unwrap_or_default())
 );
 
-// typedargslist: (tfpdef ['=' test] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] [
-//        '*' [tfpdef] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] ['**' tfpdef [','] [TYPE_COMMENT]]])
-//      | '**' tfpdef [','] [TYPE_COMMENT]]])
-//  | '*' [tfpdef] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] ['**' tfpdef [','] [TYPE_COMMENT]]])
-//  | '**' tfpdef [','] [TYPE_COMMENT])
+// typedargslist: (
+//   (tfpdef ['=' test] (',' [TYPE_COMMENT] tfpdef ['=' test])* ',' [TYPE_COMMENT] '/' [',' [ [TYPE_COMMENT] tfpdef ['=' test] (
+//         ',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] [
+//         '*' [tfpdef] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] ['**' tfpdef [','] [TYPE_COMMENT]]])
+//       | '**' tfpdef [','] [TYPE_COMMENT]]])
+//   | '*' [tfpdef] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] ['**' tfpdef [','] [TYPE_COMMENT]]])
+//   | '**' tfpdef [','] [TYPE_COMMENT]]] )
+// |  (tfpdef ['=' test] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] [
+//    '*' [tfpdef] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] ['**' tfpdef [','] [TYPE_COMMENT]]])
+//   | '**' tfpdef [','] [TYPE_COMMENT]]])
+//   | '*' [tfpdef] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] ['**' tfpdef [','] [TYPE_COMMENT]]])
+//   | '**' tfpdef [','] [TYPE_COMMENT])
+// )
 //
 // tfpdef: NAME [':' test]
 //
-// varargslist: (vfpdef ['=' test] (',' vfpdef ['=' test])* [',' [
+// varargslist: vfpdef ['=' test ](',' vfpdef ['=' test])* ',' '/' [',' [ (vfpdef ['=' test] (',' vfpdef ['=' test])* [',' [
+//         '*' [vfpdef] (',' vfpdef ['=' test])* [',' ['**' vfpdef [',']]]
+//       | '**' vfpdef [',']]]
+//   | '*' [vfpdef] (',' vfpdef ['=' test])* [',' ['**' vfpdef [',']]]
+//   | '**' vfpdef [',']) ]] | (vfpdef ['=' test] (',' vfpdef ['=' test])* [',' [
 //         '*' [vfpdef] (',' vfpdef ['=' test])* [',' ['**' vfpdef [',']]]
 //       | '**' vfpdef [',']]]
 //   | '*' [vfpdef] (',' vfpdef ['=' test])* [',' ['**' vfpdef [',']]]
@@ -211,84 +234,135 @@ named!(parameters<StrSpan, TypedArgsList>,
 // )
 //
 // vfpdef: NAME
+//
+//
+// But for legibility, we're implementing this equivalent grammar, included
+// as comment in cpython's grammar:
+//
+// arguments = argument (',' argument )*
+// argument = vfpdef ['=' test]
+// kwargs = '**' vfpdef [',']
+// args = '*' [vfpdef]
+// kwonly_kwargs = (',' argument )* [',' [kwargs]]
+// args_kwonly_kwargs = args kwonly_kwargs | kwargs
+// poskeyword_args_kwonly_kwargs = arguments [',' [args_kwonly_kwargs]]
+// varargslist_no_posonly = poskeyword_args_kwonly_kwargs | args_kwonly_kwargs
+// varargslist = arguments ',' '/' [','[(varargslist_no_posonly)]] | (varargslist_no_posonly)
+//
+// with tfpdef in place of vfpdef for the typed variant.
 
 struct ParamlistParser<IIT: IsItTyped> {
     phantom: PhantomData<IIT>,
 }
 impl<IIT: IsItTyped> ParamlistParser<IIT> {
-    named!(parse<StrSpan, IIT::List>, ws_comm!(
-      alt!(
-      /***************************
-       * Case 1: only **kwargs
-       ***************************/
-        do_parse!( // Parse this part: '**' tfpdef [',']
-          tag!("**") >>
-          star_kwargs: call!(IIT::fpdef) >> (
-            IIT::make_list(Vec::new(), None, Vec::new(), Some(star_kwargs))
-          )
-        )
+    // arguments = argument (',' argument )*
+    named!(arguments<StrSpan, Vec<(IIT::Return, Option<Box<Expression>>)>>,
+      ws_comm!(separated_nonempty_list!(char!(','), call!(Self::argument)))
+    );
 
-      /***************************
-       * Case 2: Starts with *args
-       ***************************/
-      | do_parse!( // Parse this part: '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
-          tag!("*") >>
-          star_args: opt!(call!(IIT::fpdef)) >>
-          keyword_args: many0!(preceded!(char!(','), call!(IIT::fpdef_with_default))) >>
-          star_kwargs: opt!(ws_comm!(preceded!(char!(','), opt!(ws_comm!(preceded!(tag!("**"), call!(IIT::fpdef))))))) >>
-          opt!(ws_comm!(char!(','))) >> (
-            IIT::make_list(Vec::new(), Some(star_args), keyword_args, star_kwargs.unwrap_or(None))
-          )
-        )
+    // argument = vfpdef ['=' test]
+    named!(argument<StrSpan, (IIT::Return, Option<Box<Expression>>)>,
+      ws_comm!(tuple!(
+        call!(IIT::fpdef),
+        opt!(ws_comm!(preceded!(char!('='), call!(ExpressionParser::<NewlinesAreSpaces>::test))))
+      ))
+    );
 
-      /***************************
-       * Case 3: Starts with a positional argument
-       ***************************/
-      | do_parse!(
+    // kwargs = '**' vfpdef [',']
+    named!(kwargs<StrSpan, IIT::Return>,
+      ws_comm!(delimited!(tag!("**"), call!(IIT::fpdef), opt!(char!(','))))
+    );
 
-          /************
-           * Parse positional arguments:
-           * tfpdef ['=' test] (',' tfpdef ['=' test])*
-           */
-          positional_args: separated_nonempty_list!(ws_comm!(char!(',')), call!(IIT::fpdef_with_default)) >>
-          r: opt!(ws_comm!(preceded!(char!(','), opt!(ws_comm!(
+    // args = '*' [vfpdef]
+    named!(args<StrSpan, Option<IIT::Return>>,
+      ws_comm!(preceded!(tag!("*"), opt!(call!(IIT::fpdef))))
+    );
 
-            alt!(
-              /************
-               * Case 3a: positional arguments are immediately followed by **kwargs
-               * Parse this: '**' tfpdef [',']
-               */
-              preceded!(tag!("**"), call!(IIT::fpdef)) => {|kwargs|
-                IIT::make_list(positional_args.clone(), None, Vec::new(), Some(kwargs)) // FIXME: do not clone
-              }
-
-              /************
-               * Case 3b: positional arguments are followed by * or *args
-               * Parse this: '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
-               */
-            | do_parse!(
-                char!('*') >>
-                star_args: opt!(call!(IIT::fpdef)) >>
-                keyword_args: opt!(ws_comm!(preceded!(char!(','), separated_nonempty_list!(ws_comm!(char!(',')), call!(IIT::fpdef_with_default))))) >>
-                star_kwargs: opt!(ws_comm!(preceded!(char!(','), opt!(preceded!(tag!("**"), call!(IIT::fpdef)))))) >> ( // FIXME: ws! is needed here because it does not traverse opt!
-                  IIT::make_list(positional_args.clone(), Some(star_args), keyword_args.unwrap_or(Vec::new()), star_kwargs.unwrap_or(None)) // FIXME: do not clone
-                )
-              )
-
-            )
-          ))))) >> (
-            /************
-             * Case 3c: positional arguments are not followed by anything
-             */
-            match r {
-                Some(Some(r)) => r,
-                Some(None) |
-                None => IIT::make_list(positional_args, None, Vec::new(), None),
-            }
-          )
+    // kwonly_kwargs = (',' argument )* [',' [kwargs]]
+    // returns (vec![kwonly_argument], kwargs)
+    named!(kwonly_kwargs<StrSpan, (Vec<(IIT::Return, Option<Box<Expression>>)>, Option<IIT::Return>)>,
+      do_parse!(
+        arguments: ws_comm!(many0!(preceded!(char!(','), call!(Self::argument)))) >>
+        kwargs: opt!(ws_comm!(preceded!(char!(','), opt!(Self::kwargs)))) >> (
+          (arguments, kwargs.flatten())
         )
       )
-    ));
+    );
+
+    // args_kwonly_kwargs = args kwonly_kwargs | kwargs
+    // returns (args, vec![kwonly_argument], kwargs)
+    named!(args_kwonly_kwargs<StrSpan, (Option<Option<IIT::Return>>, Vec<(IIT::Return, Option<Box<Expression>>)>, Option<IIT::Return>)>,
+      alt!(
+        call!(Self::kwargs) => {|kwargs| (None, Vec::new(), Option::Some(kwargs))}
+      | do_parse!(
+          args: call!(Self::args) >>
+          kwonly_kwargs: call!(Self::kwonly_kwargs) >> ({
+            let (arguments, kwargs) = kwonly_kwargs;
+            (Option::Some(args), arguments, kwargs)
+          })
+        )
+      )
+    );
+
+    // poskeyword_args_kwonly_kwargs = arguments [',' [args_kwonly_kwargs]]
+    // returns (vec![argument], args, vec![kwonly_argument], kwargs)
+    named!(poskeyword_args_kwonly_kwargs<StrSpan, (Vec<(IIT::Return, Option<Box<Expression>>)>, Option<Option<IIT::Return>>, Vec<(IIT::Return, Option<Box<Expression>>)>, Option<IIT::Return>)>,
+      do_parse!(
+        arguments: call!(Self::arguments) >>
+        rest: opt!(ws_comm!(preceded!(char!(','), opt!(call!(Self::args_kwonly_kwargs))))) >> ({
+          if let Some(Some((args, kwonly_arguments, kwargs))) = rest {
+            (arguments, args, kwonly_arguments, kwargs)
+          }
+          else {
+            (arguments, None, Vec::new(), None)
+          }
+        })
+      )
+    );
+
+    // varargslist_no_posonly = poskeyword_args_kwonly_kwargs | args_kwonly_kwargs
+    // returns (vec![argument], args, vec![kwonly_argument], kwargs)
+    named!(varargslist_no_posonly<StrSpan, (Vec<(IIT::Return, Option<Box<Expression>>)>, Option<Option<IIT::Return>>, Vec<(IIT::Return, Option<Box<Expression>>)>, Option<IIT::Return>)>,
+      alt!(
+        call!(Self::poskeyword_args_kwonly_kwargs)
+      | call!(Self::args_kwonly_kwargs) => {|(args, kwonly_arguments, kwargs)|
+          (Vec::new(), args, kwonly_arguments, kwargs)
+        }
+      )
+    );
+
+    // varargslist = arguments ',' '/' [','[(varargslist_no_posonly)]] | (varargslist_no_posonly)
+    // returns (vec![posonly_argument], vec![argument], args, vec![kwonly_argument], kwargs)
+    named!(varargslist<StrSpan, (Vec<(IIT::Return, Option<Box<Expression>>)>, Vec<(IIT::Return, Option<Box<Expression>>)>, Option<Option<IIT::Return>>, Vec<(IIT::Return, Option<Box<Expression>>)>, Option<IIT::Return>)>,
+      alt!(
+        ws_comm!(do_parse!(
+          posonly_arguments: ws_comm!(call!(Self::arguments)) >>
+          char!(',') >>
+          char!('/') >>
+          varargslist_no_posonly: opt!(ws_comm!(preceded!(char!(','), opt!(call!(Self::varargslist_no_posonly))))) >> ({
+            if let Some(Some((arguments, args, kwonly_arguments, kwargs))) = varargslist_no_posonly {
+                (posonly_arguments, arguments, args, kwonly_arguments, kwargs)
+            }
+            else {
+                (posonly_arguments, Vec::new(), None, Vec::new(), None)
+            }
+          })
+        ))
+      | call!(Self::varargslist_no_posonly) => {|varargslist_no_posonly| {
+            let (arguments, args, kwonly_arguments, kwargs) = varargslist_no_posonly;
+            (Vec::new(), arguments, args, kwonly_arguments, kwargs)
+        }}
+      )
+    );
+
+
+
+    named!(parse<StrSpan, IIT::List>,
+      map!(call!(Self::varargslist), |varargslist| {
+        let (posonly_arguments, arguments, args, kwonly_arguments, kwargs) = varargslist;
+        IIT::make_list(posonly_arguments, arguments, args, kwonly_arguments, kwargs)
+      })
+    );
 }
 
 pub(crate) fn typedargslist(i: StrSpan) -> IResult<StrSpan, TypedArgsList, u32> {
@@ -437,7 +511,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![("foo".to_string(), None, None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None, None)],
                     star_args: StarParams::No,
                     keyword_args: vec![],
                     star_kwargs: None,
@@ -450,7 +525,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None)],
                     star_args: StarParams::No,
                     keyword_args: vec![],
                     star_kwargs: None,
@@ -463,7 +539,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![(
+                    posonly_args: vec![],
+                    args: vec![(
                         "foo".to_string(),
                         None,
                         Some(Expression::Name("bar".to_string())),
@@ -480,7 +557,43 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![(
+                    posonly_args: vec![],
+                    args: vec![(
+                        "foo".to_string(),
+                        Some(Expression::Name("bar".to_string())),
+                    )],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: None,
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo = bar")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![],
+                    args: vec![(
+                        "foo".to_string(),
+                        None,
+                        Some(Expression::Name("bar".to_string())),
+                    )],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: None,
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Untyped>::parse(make_strspan("foo = bar")),
+            Ok((
+                make_strspan(""),
+                UntypedArgsList {
+                    posonly_args: vec![],
+                    args: vec![(
                         "foo".to_string(),
                         Some(Expression::Name("bar".to_string())),
                     )],
@@ -496,7 +609,26 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![(
+                    posonly_args: vec![],
+                    args: vec![(
+                        "foo".to_string(),
+                        Some(Expression::Name("bar".to_string())),
+                        None,
+                    )],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: None,
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo : bar")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![],
+                    args: vec![(
                         "foo".to_string(),
                         Some(Expression::Name("bar".to_string())),
                         None,
@@ -513,7 +645,8 @@ mod tests {
             Ok((
                 make_strspan(":bar"),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None)],
                     star_args: StarParams::No,
                     keyword_args: vec![],
                     star_kwargs: None,
@@ -526,7 +659,26 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![(
+                    posonly_args: vec![],
+                    args: vec![(
+                        "foo".to_string(),
+                        Some(Expression::Name("bar".to_string())),
+                        Some(Expression::Name("baz".to_string())),
+                    )],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: None,
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo : bar = baz")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![],
+                    args: vec![(
                         "foo".to_string(),
                         Some(Expression::Name("bar".to_string())),
                         Some(Expression::Name("baz".to_string())),
@@ -543,7 +695,8 @@ mod tests {
             Ok((
                 make_strspan(":bar=baz"),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None)],
                     star_args: StarParams::No,
                     keyword_args: vec![],
                     star_kwargs: None,
@@ -556,7 +709,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![
+                    posonly_args: vec![],
+                    args: vec![
                         ("foo".to_string(), None, None),
                         ("bar".to_string(), None, None),
                     ],
@@ -572,7 +726,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None), ("bar".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None), ("bar".to_string(), None)],
                     star_args: StarParams::No,
                     keyword_args: vec![],
                     star_kwargs: None,
@@ -588,7 +743,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![("foo".to_string(), None, None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None, None)],
                     star_args: StarParams::Anonymous,
                     keyword_args: vec![("bar".to_string(), None, None)],
                     star_kwargs: None,
@@ -601,7 +757,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None)],
                     star_args: StarParams::Anonymous,
                     keyword_args: vec![("bar".to_string(), None)],
                     star_kwargs: None,
@@ -614,7 +771,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![("foo".to_string(), None, None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None, None)],
                     star_args: StarParams::Anonymous,
                     keyword_args: vec![(
                         "bar".to_string(),
@@ -631,7 +789,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None)],
                     star_args: StarParams::Anonymous,
                     keyword_args: vec![(
                         "bar".to_string(),
@@ -650,7 +809,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![("foo".to_string(), None, None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None, None)],
                     star_args: StarParams::No,
                     keyword_args: vec![],
                     star_kwargs: Some(("kwargs".to_string(), None)),
@@ -663,7 +823,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None)],
                     star_args: StarParams::No,
                     keyword_args: vec![],
                     star_kwargs: Some("kwargs".to_string()),
@@ -676,7 +837,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![("foo".to_string(), None, None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None, None)],
                     star_args: StarParams::Named(("args".to_string(), None)),
                     keyword_args: vec![],
                     star_kwargs: Some(("kwargs".to_string(), None)),
@@ -689,7 +851,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None)],
                     star_args: StarParams::Named("args".to_string()),
                     keyword_args: vec![],
                     star_kwargs: Some("kwargs".to_string()),
@@ -702,7 +865,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 TypedArgsList {
-                    positional_args: vec![("foo".to_string(), None, None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None, None)],
                     star_args: StarParams::Anonymous,
                     keyword_args: vec![("bar".to_string(), None, None)],
                     star_kwargs: Some(("kwargs".to_string(), None)),
@@ -715,7 +879,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![("foo".to_string(), None)],
+                    posonly_args: vec![],
+                    args: vec![("foo".to_string(), None)],
                     star_args: StarParams::Anonymous,
                     keyword_args: vec![("bar".to_string(), None)],
                     star_kwargs: Some("kwargs".to_string()),
@@ -731,7 +896,8 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![],
+                    posonly_args: vec![],
+                    args: vec![],
                     star_args: StarParams::Named("foo".to_string()),
                     keyword_args: vec![("bar".to_string(), None)],
                     star_kwargs: Some("kwargs".to_string()),
@@ -744,9 +910,194 @@ mod tests {
             Ok((
                 make_strspan(""),
                 UntypedArgsList {
-                    positional_args: vec![],
+                    posonly_args: vec![],
+                    args: vec![],
                     star_args: StarParams::Named("foo".to_string()),
                     keyword_args: vec![],
+                    star_kwargs: Some("kwargs".to_string()),
+                },
+            )),
+        );
+    }
+
+    #[test]
+    fn test_posonly_args() {
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo, /, bar")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None, None)],
+                    args: vec![("bar".to_string(), None, None)],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: None,
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Untyped>::parse(make_strspan("foo, /, bar")),
+            Ok((
+                make_strspan(""),
+                UntypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None)],
+                    args: vec![("bar".to_string(), None)],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: None,
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo, /, bar=baz")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None, None)],
+                    args: vec![(
+                        "bar".to_string(),
+                        None,
+                        Some(Expression::Name("baz".to_string())),
+                    )],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: None,
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Untyped>::parse(make_strspan("foo, /, bar=baz")),
+            Ok((
+                make_strspan(""),
+                UntypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None)],
+                    args: vec![(
+                        "bar".to_string(),
+                        Some(Expression::Name("baz".to_string())),
+                    )],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: None,
+                },
+            )),
+        );
+    }
+
+    #[test]
+    fn test_posonly_args_star_args() {
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo, /, *, bar")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None, None)],
+                    args: vec![],
+                    star_args: StarParams::Anonymous,
+                    keyword_args: vec![("bar".to_string(), None, None)],
+                    star_kwargs: None,
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Untyped>::parse(make_strspan("foo, /, *, bar")),
+            Ok((
+                make_strspan(""),
+                UntypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None)],
+                    args: vec![],
+                    star_args: StarParams::Anonymous,
+                    keyword_args: vec![("bar".to_string(), None)],
+                    star_kwargs: None,
+                },
+            )),
+        );
+    }
+
+    #[test]
+    fn test_posonly_args_star_kwargs() {
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo, /, **kwargs")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None, None)],
+                    args: vec![],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: Some(("kwargs".to_string(), None)),
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Untyped>::parse(make_strspan("foo, /, **kwargs")),
+            Ok((
+                make_strspan(""),
+                UntypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None)],
+                    args: vec![],
+                    star_args: StarParams::No,
+                    keyword_args: vec![],
+                    star_kwargs: Some("kwargs".to_string()),
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo, /, *args, **kwargs")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None, None)],
+                    args: vec![],
+                    star_args: StarParams::Named(("args".to_string(), None)),
+                    keyword_args: vec![],
+                    star_kwargs: Some(("kwargs".to_string(), None)),
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Untyped>::parse(make_strspan("foo, /, *args, **kwargs")),
+            Ok((
+                make_strspan(""),
+                UntypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None)],
+                    args: vec![],
+                    star_args: StarParams::Named("args".to_string()),
+                    keyword_args: vec![],
+                    star_kwargs: Some("kwargs".to_string()),
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Typed>::parse(make_strspan("foo, /, *, bar, **kwargs")),
+            Ok((
+                make_strspan(""),
+                TypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None, None)],
+                    args: vec![],
+                    star_args: StarParams::Anonymous,
+                    keyword_args: vec![("bar".to_string(), None, None)],
+                    star_kwargs: Some(("kwargs".to_string(), None)),
+                },
+            )),
+        );
+
+        assert_parse_eq(
+            ParamlistParser::<Untyped>::parse(make_strspan("foo, /, *, bar, **kwargs")),
+            Ok((
+                make_strspan(""),
+                UntypedArgsList {
+                    posonly_args: vec![("foo".to_string(), None)],
+                    args: vec![],
+                    star_args: StarParams::Anonymous,
+                    keyword_args: vec![("bar".to_string(), None)],
                     star_kwargs: Some("kwargs".to_string()),
                 },
             )),

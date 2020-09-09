@@ -45,7 +45,8 @@ impl<T> Default for StarParams<T> {
 /// The list of parameters of a function definition.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct TypedArgsList {
-    pub positional_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
+    pub posonly_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
+    pub args: Vec<(Name, Option<Expression>, Option<Expression>)>,
     pub star_args: StarParams<(Name, Option<Expression>)>,
     pub keyword_args: Vec<(Name, Option<Expression>, Option<Expression>)>,
     pub star_kwargs: Option<(Name, Option<Expression>)>,
@@ -54,7 +55,8 @@ pub struct TypedArgsList {
 /// The list of parameters of a lambda definition.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct UntypedArgsList {
-    pub positional_args: Vec<(Name, Option<Expression>)>,
+    pub posonly_args: Vec<(Name, Option<Expression>)>,
+    pub args: Vec<(Name, Option<Expression>)>,
     pub star_args: StarParams<Name>,
     pub keyword_args: Vec<(Name, Option<Expression>)>,
     pub star_kwargs: Option<Name>,
