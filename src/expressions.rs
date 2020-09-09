@@ -564,7 +564,7 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
             preceded!(tag!("**"), call!(Self::test)) => { |kwargs: Box<_>| Argument::Kwargs(*kwargs) }
           | preceded!(char!('*'), call!(Self::test)) => { |args: Box<_>| Argument::Starargs(*args) }
           | do_parse!(
-              name: name >>
+              name: name >> // According to the grammar, this should be a 'test', but cpython actually refuses it (for good reasons)
               value: preceded!(char!('='), call!(Self::test)) >> (
                 Argument::Keyword(name.to_string(), *value)
               )
@@ -1337,6 +1337,20 @@ mod tests {
                         Argument::Keyword("qux1".to_string(), Expression::Name("qux2".to_string())),
                     ],
                 )),
+            )),
+        );
+    }
+
+    #[test]
+    fn test_call_keyword_expr() {
+        // The Grammar technically allows this, but CPython refuses it for good reasons;
+        // let's do the same.
+        let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
+        assert_parse_eq(
+            atom_expr(make_strspan("foo(bar1 if baz else bar2=baz)")),
+            Ok((
+                make_strspan("(bar1 if baz else bar2=baz)"),
+                Box::new(Expression::Name("foo".to_string())),
             )),
         );
     }
