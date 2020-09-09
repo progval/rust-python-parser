@@ -58,7 +58,7 @@ named!(small_stmt<StrSpan, Statement>,
 
 // expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
 //                     ('=' (yield_expr|testlist_star_expr))*)
-// annassign: ':' test ['=' test]
+// annassign: ':' test ['=' (yield_expr|testlist)]
 named!(expr_stmt<StrSpan, Statement>,
   do_parse!(
     lhs: call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist_star_expr) >>
@@ -67,12 +67,13 @@ named!(expr_stmt<StrSpan, Statement>,
       do_parse!(
         char!(':') >>
         typed: call!(ExpressionParser::<NewlinesAreNotSpaces>::test) >>
-        rhs: opt!(ws_nonl!(preceded!(char!('='),
-            call!(ExpressionParser::<NewlinesAreNotSpaces>::test)
-        ))) >> (
+        rhs: opt!(ws_nonl!(preceded!(char!('='), alt!(
+          call!(ExpressionParser::<NewlinesAreNotSpaces>::yield_expr) => { |e| vec![e] }
+        | call!(ExpressionParser::<NewlinesAreNotSpaces>::testlist)
+        )))) >> (
           match rhs {
               None => Statement::TypeAnnotation(lhs.clone(), *typed),
-              Some(rhs) => Statement::TypedAssignment(lhs.clone(), *typed, vec![*rhs]),
+              Some(rhs) => Statement::TypedAssignment(lhs.clone(), *typed, rhs),
           }
         )
       )
@@ -1088,6 +1089,21 @@ mod tests {
                     vec![Expression::Name("foo".to_string())],
                     Expression::Name("bar".to_string()),
                     vec![Expression::Name("baz".to_string())],
+                ),
+            )),
+        );
+    }
+
+    #[test]
+    fn test_augassign_yield() {
+        assert_parse_eq(
+            small_stmt(make_strspan("foo:bar = yield baz")),
+            Ok((
+                make_strspan(""),
+                Statement::TypedAssignment(
+                    vec![Expression::Name("foo".to_string())],
+                    Expression::Name("bar".to_string()),
+                    vec![Expression::Yield(vec![Expression::Name("baz".to_string())])],
                 ),
             )),
         );
