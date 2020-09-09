@@ -23,6 +23,24 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
      * Decorators
      *********************************************************************/
 
+    // namedexpr_test: test [':=' test]
+    named!(pub namedexpr_test<StrSpan, Box<Expression>>,
+      do_parse!(
+        left: call!(Self::test) >>
+        right: opt!(
+          preceded!(
+            ws_auto!(keyword!(":=")),
+            call!(Self::test)
+          )
+        ) >> (
+          match right {
+            None => left,
+            Some(right) => Box::new(Expression::Named(left, right)),
+          }
+        )
+      )
+    );
+
     // test: or_test ['if' or_test 'else' test] | lambdef
     named!(pub test<StrSpan, Box<Expression>>,
       alt!(
@@ -325,11 +343,11 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
       ), |e| Box::new(e))
     );
 
-    // testlist_comp: (test|star_expr) ( comp_for | (',' (test|star_expr))* [','] )
+    // testlist_comp: (namedexpr_test|star_expr) ( comp_for | (',' (namedexpr_test|star_expr))* [','] )
     named!(testlist_comp<StrSpan, TestlistCompReturn>,
       do_parse!(
         first: ws_auto!(alt!(
-            call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
+            call!(Self::namedexpr_test) => { |e: Box<_>| SetItem::Unique(*e) }
           | preceded!(char!('*'), call!(Self::expr)) => { |e: Box<_>| SetItem::Star(*e) }
           )) >>
         r: alt!(
@@ -338,7 +356,7 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
             ws_auto!(char!(',')),
             separated_list!(ws_auto!(char!(',')),
               alt!(
-                call!(Self::test) => { |e: Box<_>| SetItem::Unique(*e) }
+                call!(Self::namedexpr_test) => { |e: Box<_>| SetItem::Unique(*e) }
               | preceded!(char!('*'), call!(Self::expr)) => { |e: Box<_>| SetItem::Star(*e) }
               )
             ),
@@ -1908,6 +1926,36 @@ mod tests {
                 Box::new(Expression::Lambdef(
                     Default::default(),
                     Box::new(Expression::Name("foo".to_string())),
+                )),
+            )),
+        );
+    }
+
+    #[test]
+    fn test_namedexpr() {
+        let namedexpr_test = ExpressionParser::<NewlinesAreNotSpaces>::namedexpr_test;
+
+        assert_parse_eq(
+            namedexpr_test(make_strspan("foo := bar")),
+            Ok((
+                make_strspan(""),
+                Box::new(Expression::Named(
+                    Box::new(Expression::Name("foo".to_string())),
+                    Box::new(Expression::Name("bar".to_string())),
+                )),
+            )),
+        );
+
+        assert_parse_eq(
+            namedexpr_test(make_strspan("foo := (bar := baz)")),
+            Ok((
+                make_strspan(""),
+                Box::new(Expression::Named(
+                    Box::new(Expression::Name("foo".to_string())),
+                    Box::new(Expression::Named(
+                        Box::new(Expression::Name("bar".to_string())),
+                        Box::new(Expression::Name("baz".to_string())),
+                    )),
                 )),
             )),
         );

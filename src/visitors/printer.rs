@@ -720,6 +720,9 @@ fn format_expr(e: &Expression) -> String {
             format_untyped_params(params),
             format_expr(body)
         ),
+        Expression::Named(ref name, ref expr) => {
+            format!("{} := ({})", format_expr(name), format_expr(expr),)
+        }
     }
 }
 
@@ -818,5 +821,14 @@ mod tests {
             &format_expr(&e),
             "[a for a in L if ((f(a)) if (a) else (None))]"
         );
+    }
+
+    #[test]
+    fn test_namedexpr() {
+        let e = Expression::Named(
+            Box::new(Expression::Name("foo".to_string())),
+            Box::new(Expression::Name("bar".to_string())),
+        );
+        assert_eq!(&format_expr(&e), "foo := (bar)");
     }
 }

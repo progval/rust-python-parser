@@ -260,6 +260,8 @@ pub enum Expression {
     YieldFrom(Box<Expression>),
     Star(Box<Expression>),
     Lambdef(UntypedArgsList, Box<Expression>),
+    /// Walrus operator: 1 := 2
+    Named(Box<Expression>, Box<Expression>),
 }
 
 /// An import statement.

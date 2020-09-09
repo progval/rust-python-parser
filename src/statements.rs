@@ -341,6 +341,7 @@ named_args!(pub block(indent: usize) <StrSpan, Vec<Statement>>,
   | call!(simple_stmt)
   )
 );
+// used to parse `namedexpr_test ':' suite` in if_stmt and while_stmt
 named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)>,
   return_error!(do_parse!(
     spaces_nonl >>
@@ -384,7 +385,7 @@ named_args!(else_block(indent: usize) <StrSpan, Option<Vec<Statement>>>,
   )
 );
 
-// if_stmt: 'if' test ':' suite ('elif' test ':' suite)* ['else' ':' suite]
+// if_stmt: 'if' namedexpr_test ':' suite ('elif' namedexpr_test ':' suite)* ['else' ':' suite]
 named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     indent!(indent) >>
@@ -404,7 +405,7 @@ named_args!(if_stmt(indent: usize) <StrSpan, CompoundStatement>,
   )
 );
 
-// while_stmt: 'while' test ':' suite ['else' ':' suite]
+// while_stmt: 'while' namedexpr_test ':' suite ['else' ':' suite]
 named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     indent!(indent) >>
