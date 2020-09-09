@@ -1,7 +1,5 @@
 # v0.2.0
 
-work in progress
-
 Support for 3.8 syntax
 
 Breaking changes:
