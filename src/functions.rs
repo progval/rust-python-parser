@@ -5,7 +5,7 @@ use nom::IResult;
 use ast::*;
 use expressions::ExpressionParser;
 use helpers::*;
-use statements::{block, ImportParser};
+use statements::{block, func_body_suite, ImportParser};
 
 /*********************************************************************
  * Decorators
@@ -46,7 +46,7 @@ named_args!(pub decorated(indent: usize) <StrSpan, CompoundStatement>,
  *********************************************************************/
 
 // async_funcdef: 'async' funcdef
-// funcdef: 'def' NAME parameters ['->' test] ':' suite
+// funcdef: 'def' NAME parameters ['->' test] ':' [TYPE_COMMENT] func_body_suite
 named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, CompoundStatement>,
   do_parse!(
     indent!(indent) >>
@@ -57,7 +57,7 @@ named_args!(funcdef(indent: usize, decorators: Vec<Decorator>) <StrSpan, Compoun
     parameters: ws_nonl!(parameters) >>
     return_type: opt!(ws_nonl!(preceded!(tag!("->"), call!(ExpressionParser::<NewlinesAreNotSpaces>::test)))) >>
     ws_nonl!(char!(':')) >>
-    code: call!(block, indent) >> (
+    code: call!(func_body_suite, indent) >> (
       CompoundStatement::Funcdef(Funcdef {
           async: async.is_some(), decorators, name, parameters, return_type: return_type.map(|t| *t), code
       })
@@ -195,11 +195,11 @@ named!(parameters<StrSpan, TypedArgsList>,
   map!(delimited!(char!('('), opt!(ws_comm!(typedargslist)), char!(')')), |o| o.unwrap_or_default())
 );
 
-// typedargslist: (tfpdef ['=' test] (',' tfpdef ['=' test])* [',' [
-//         '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
-//       | '**' tfpdef [',']]]
-//   | '*' [tfpdef] (',' tfpdef ['=' test])* [',' ['**' tfpdef [',']]]
-//   | '**' tfpdef [','])
+// typedargslist: (tfpdef ['=' test] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] [
+//        '*' [tfpdef] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] ['**' tfpdef [','] [TYPE_COMMENT]]])
+//      | '**' tfpdef [','] [TYPE_COMMENT]]])
+//  | '*' [tfpdef] (',' [TYPE_COMMENT] tfpdef ['=' test])* (TYPE_COMMENT | [',' [TYPE_COMMENT] ['**' tfpdef [','] [TYPE_COMMENT]]])
+//  | '**' tfpdef [','] [TYPE_COMMENT])
 //
 // tfpdef: NAME [':' test]
 //

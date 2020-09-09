@@ -57,7 +57,7 @@ named!(small_stmt<StrSpan, Statement>,
  *********************************************************************/
 
 // expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
-//                     ('=' (yield_expr|testlist_star_expr))*)
+//                      [('=' (yield_expr|testlist_star_expr))+ [TYPE_COMMENT]] )
 // annassign: ':' test ['=' (yield_expr|testlist)]
 named!(expr_stmt<StrSpan, Statement>,
   do_parse!(
@@ -354,6 +354,12 @@ named_args!(cond_and_block(indent: usize) <StrSpan, (Expression, Vec<Statement>)
   ))
 );
 
+// func_body_suite: simple_stmt | NEWLINE [TYPE_COMMENT NEWLINE] INDENT stmt+ DEDENT
+// for now, we ignore type comments, so it's exactly the same as 'suite'
+named_args!(pub func_body_suite(indent: usize) <StrSpan, Vec<Statement>>,
+  call!(block, indent)
+);
+
 // compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt
 named_args!(compound_stmt(indent: usize) <StrSpan, CompoundStatement>,
   alt!(
@@ -419,7 +425,7 @@ named_args!(while_stmt(indent: usize) <StrSpan, CompoundStatement>,
   )
 );
 
-// for_stmt: 'for' exprlist 'in' testlist ':' suite ['else' ':' suite]
+// for_stmt: 'for' exprlist 'in' testlist ':' [TYPE_COMMENT] suite ['else' ':' suite]
 named_args!(for_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
     indent!(indent) >>
@@ -500,7 +506,7 @@ named_args!(try_stmt(indent: usize) <StrSpan, CompoundStatement>,
   )
 );
 
-// with_stmt: 'with' with_item (',' with_item)*  ':' suite
+// with_stmt: 'with' with_item (',' with_item)*  ':' [TYPE_COMMENT] suite
 // with_item: test ['as' expr]
 named_args!(with_stmt(indent: usize) <StrSpan, CompoundStatement>,
   do_parse!(
