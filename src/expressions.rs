@@ -554,6 +554,7 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
     // arglist: argument (',' argument)*  [',']
 
     // argument: ( test [comp_for] |
+    //             test ':=' test |
     //             test '=' test |
     //             '**' test |
     //             '*' test )
@@ -563,6 +564,12 @@ impl<ANS: AreNewlinesSpaces> ExpressionParser<ANS> {
           alt!(
             preceded!(tag!("**"), call!(Self::test)) => { |kwargs: Box<_>| Argument::Kwargs(*kwargs) }
           | preceded!(char!('*'), call!(Self::test)) => { |args: Box<_>| Argument::Starargs(*args) }
+          | do_parse!(
+              name: call!(Self::test) >>
+              value: preceded!(tag!(":="), call!(Self::test)) >> (
+                Argument::Positional(Expression::Named(name, value))
+              )
+            )
           | do_parse!(
               name: name >> // According to the grammar, this should be a 'test', but cpython actually refuses it (for good reasons)
               value: preceded!(char!('='), call!(Self::test)) >> (
@@ -1167,6 +1174,24 @@ mod tests {
                     Box::new(Expression::Name("foo".to_string())),
                     vec![Argument::Positional(Expression::Bop(
                         Bop::Mult,
+                        Box::new(Expression::Name("bar".to_string())),
+                        Box::new(Expression::Name("baz".to_string())),
+                    ))],
+                )),
+            )),
+        );
+    }
+
+    #[test]
+    fn test_call_positional_namedexpr() {
+        let atom_expr = ExpressionParser::<NewlinesAreNotSpaces>::atom_expr;
+        assert_parse_eq(
+            atom_expr(make_strspan("foo(bar := baz)")),
+            Ok((
+                make_strspan(""),
+                Box::new(Expression::Call(
+                    Box::new(Expression::Name("foo".to_string())),
+                    vec![Argument::Positional(Expression::Named(
                         Box::new(Expression::Name("bar".to_string())),
                         Box::new(Expression::Name("baz".to_string())),
                     ))],
